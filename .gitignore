@@ -15,4 +15,6 @@ src/config.local.js
 # Scratch
 _tmp/
 *.log
-.impeccable/
+# impeccable: share the ignore config, keep the cache and personal overrides out
+.impeccable/hook.cache.json
+.impeccable/config.local.json

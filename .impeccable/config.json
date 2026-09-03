@@ -1,0 +1,9 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [
+      "test/slide-test.html"
+    ],
+    "ignoreValues": []
+  }
+}
