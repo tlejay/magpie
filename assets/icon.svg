@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="27" fill="#1e2024"/>
+  <g fill="#F59E0B">
+    <!-- the long tail is the magpie's signature — let it dominate the shape -->
+    <polygon points="64,66 84,54 118,112 98,110"/>
+    <!-- body -->
+    <ellipse cx="52" cy="66" rx="24" ry="20"/>
+    <!-- head -->
+    <circle cx="42" cy="38" r="17"/>
+    <!-- beak -->
+    <polygon points="12,40 38,31 38,49"/>
+  </g>
+  <circle cx="47" cy="34" r="4.6" fill="#1e2024"/>
+</svg>

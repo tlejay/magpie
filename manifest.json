@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "Magpie",
+  "version": "1.0.0",
+  "description": "เก็บสิ่งที่การประชุมทิ้งไว้ — เฝ้าหา QR Code, อัดเสียง, จับภาพสไลด์ ใช้ได้กับทุกการประชุมที่เปิดในแท็บ Chrome",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "tabCapture",
+    "offscreen",
+    "notifications",
+    "storage",
+    "alarms",
+    "power",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://discord.com/api/webhooks/*"
+  ],
+  "background": {
+    "service_worker": "src/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "Magpie",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "32": "assets/icon32.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "src/options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "32": "assets/icon32.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/alert.wav"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

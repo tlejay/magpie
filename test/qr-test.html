@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>หน้าทดสอบ QR — Magpie</title>
+  <style>
+    :root { --bg:#f4f5f7; --fg:#16171a; --panel:#fff; --line:#dcdee3; --muted:#6b7280; }
+    body.dark { --bg:#0d0e10; --fg:#e9eaec; --panel:#1a1c1f; --line:#2c2f35; --muted:#8b9099; }
+    * { box-sizing: border-box; }
+    body {
+      margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
+      font:14px/1.6 "Noto Sans Thai",-apple-system,BlinkMacSystemFont,sans-serif;
+      display:flex; flex-direction:column;
+    }
+    .bar {
+      background:var(--panel); border-bottom:1px solid var(--line);
+      padding:12px 18px; display:flex; gap:16px; align-items:center; flex-wrap:wrap;
+    }
+    .bar h1 { font-size:14px; margin:0; margin-right:auto; }
+    .bar label { font-size:12px; color:var(--muted); display:flex; gap:6px; align-items:center; }
+    button {
+      font:inherit; font-size:13px; padding:6px 14px; border-radius:7px;
+      border:1px solid var(--line); background:var(--panel); color:var(--fg); cursor:pointer;
+    }
+    button.go { background:#0b5cff; color:#fff; border-color:#0b5cff; }
+    .stage {
+      flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:22px; padding:40px 20px; text-align:center;
+    }
+    #countdown { font-size:44px; font-weight:700; letter-spacing:-.02em; }
+    #hint { color:var(--muted); max-width:520px; }
+    #qrWrap { display:none; }
+    #qrWrap.show { display:block; }
+    #qr { image-rendering:pixelated; background:#fff; padding:8px; border-radius:6px; }
+    body.dark #qr { filter:invert(1); background:#000; }
+    .payload { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:var(--muted); margin-top:10px; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <h1>หน้าทดสอบ QR — Magpie</h1>
+    <label>โชว์ QR หลังจาก
+      <input id="delay" type="number" min="0" max="600" value="20" style="width:60px"> วินาที
+    </label>
+    <label>ขนาด <input id="size" type="range" min="40" max="480" value="320"> <b id="sizeLabel">320px</b></label>
+    <label><input id="dark" type="checkbox"> พื้นดำ (ทดสอบ QR กลับสี)</label>
+    <button id="start" class="go">เริ่มนับถอยหลัง</button>
+    <button id="swap">สลับ QR (มี 3 อัน)</button>
+    <button id="hide">ซ่อน QR</button>
+  </div>
+
+  <div class="stage">
+    <div id="countdown">พร้อม</div>
+    <p id="hint">
+      กด <b>เริ่มนับถอยหลัง</b> แล้วรีบไปกดไอคอน extension → <b>เริ่มมอนิเตอร์แท็บนี้</b><br>
+      พอครบเวลา QR จะโผล่ขึ้นมาเอง เหมือนตอนวิทยากรกดสไลด์<br>
+      อยากทดสอบว่าจับ QR เล็ก ๆ ได้ไหม ให้ลากแถบ “ขนาด” ลงมาเหลือ 60–80px<br>
+      กด <b>สลับ QR</b> ไปอันที่ 3 (<code>lin.ee</code>) เพื่อทดสอบ blacklist — อันนั้น<b>ต้องไม่เตือน</b>
+    </p>
+    <div id="qrWrap">
+      <img id="qr" src="qr-a.png" alt="QR ทดสอบ" width="320">
+      <p class="payload" id="payload">https://forms.gle/MagpieTestA   —   ควรเตือน</p>
+    </div>
+  </div>
+
+  <script src="qr-test.js"></script>
+</body>
+</html>

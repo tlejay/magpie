@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>Magpie</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="../assets/icon48.png" alt="">
+      <div>
+        <h1>Magpie</h1>
+        <p id="engine" class="muted">—</p>
+      </div>
+    </div>
+    <span id="pill" class="pill off">หยุดอยู่</span>
+  </header>
+
+  <section id="warn" class="warn" hidden></section>
+
+  <section class="target">
+    <p class="label">แท็บเป้าหมาย</p>
+    <p id="tabTitle" class="tab-title">กำลังอ่าน…</p>
+  </section>
+
+  <button id="toggle" class="primary">เริ่มมอนิเตอร์แท็บนี้</button>
+
+  <section id="stats" class="stats" hidden>
+    <div><span id="scanCount">0</span><small>สแกนแล้ว</small></div>
+    <div><span id="filteredCount">0</span><small>กรองทิ้ง</small></div>
+    <div><span id="lastScan">—</span><small>สแกนล่าสุด</small></div>
+    <div><span id="uptime">—</span><small>เฝ้ามาแล้ว</small></div>
+  </section>
+
+  <section class="log">
+    <p class="label">ประวัติที่เจอ <a id="openOptions" href="#">ตั้งค่า</a></p>
+    <ul id="logList"><li class="empty">ยังไม่เจอ QR</li></ul>
+  </section>
+
+  <footer>
+    <a id="openTest" href="#">เปิดหน้าทดสอบ</a>
+    <span id="msg" class="muted"></span>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

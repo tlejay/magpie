@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>ตั้งค่า — Magpie</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+<main>
+  <header>
+    <img src="../assets/icon128.png" alt="">
+    <div>
+      <h1>Magpie</h1>
+      <p class="muted">เก็บสิ่งที่การประชุมทิ้งไว้ — QR Code, เสียง, สไลด์</p>
+    </div>
+  </header>
+
+  <p id="engineNote" class="note">กำลังตรวจตัวอ่าน QR…</p>
+
+  <section>
+    <h2>Discord</h2>
+    <label for="webhookUrl">Webhook URL</label>
+    <input id="webhookUrl" type="url" placeholder="https://discord.com/api/webhooks/…" spellcheck="false">
+    <p class="hint">
+      สร้างที่ Discord: <b>Server Settings → Integrations → Webhooks → New Webhook</b> แล้วกด Copy Webhook URL<br>
+      URL นี้เป็นความลับ ใครถือก็โพสต์เข้า channel นี้ได้ — อย่าเอาไปแปะที่สาธารณะ
+    </p>
+    <div class="row">
+      <button id="testWebhook" class="secondary">ทดสอบส่งเข้า Discord</button>
+      <span id="testResult" class="muted"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>การสแกน</h2>
+
+    <label for="intervalSec">สแกนทุก <b id="intervalLabel">60</b> วินาที</label>
+    <input id="intervalSec" type="range" min="10" max="300" step="5">
+    <p class="hint">
+      ยิ่งถี่ยิ่งพลาดยาก และแทบไม่กิน CPU เพิ่ม เพราะภาพมาจาก stream ที่เปิดค้างอยู่แล้ว
+      ถ้าวิทยากรชอบโชว์ QR แวบเดียว ลองลดเหลือ 15–20 วินาที
+    </p>
+
+    <label for="cooldownMin">ไม่เตือนซ้ำ QR เดิมภายใน <b id="cooldownLabel">30</b> นาที</label>
+    <input id="cooldownMin" type="range" min="1" max="180" step="1">
+    <p class="hint">QR อันเดิมมักค้างบนสไลด์หลายนาที ถ้าไม่กันไว้จะโดนเตือนซ้ำทุกรอบสแกน</p>
+
+    <label for="urlBlocklist">ไม่ต้องเตือนถ้ามีคำเหล่านี้ (คั่นด้วยจุลภาค)</label>
+    <input id="urlBlocklist" type="text" placeholder="เว้นว่าง = ไม่กรองอะไรทิ้ง" spellcheck="false">
+    <p class="hint">
+      ตัวนี้ชนะทุกอย่าง — เข้าเงื่อนไขเมื่อไหร่คือทิ้งทันที<br>
+      ค่าเริ่มต้น <code>line.naver.jp</code> กับ <code>lin.ee</code> มาจากเคสจริง:
+      วิทยากรมักมี QR เพิ่มเพื่อน LINE อยู่บนสไลด์แนะนำตัว ซึ่งไม่ใช่ QR ที่เรารอ · ลบออกได้
+    </p>
+
+    <label for="urlFilter">กรองเฉพาะที่มีคำเหล่านี้ (คั่นด้วยจุลภาค)</label>
+    <input id="urlFilter" type="text" placeholder="เว้นว่าง = แจ้งทุก QR ที่เจอ" spellcheck="false">
+    <p class="hint">เช่น <code>forms.gle, docs.google, surveymonkey</code> เพื่อไม่ให้ QR โฆษณาในสไลด์มากวน</p>
+  </section>
+
+  <section>
+    <h2>ตอนเจอ QR</h2>
+
+    <div class="check">
+      <input id="soundEnabled" type="checkbox">
+      <label for="soundEnabled">เล่นเสียงเตือน</label>
+      <button id="testSound" class="tiny">ลองฟัง</button>
+    </div>
+
+    <label for="volume">ความดัง <b id="volumeLabel">80</b>%</label>
+    <input id="volume" type="range" min="0" max="100" step="5">
+
+    <div class="check">
+      <input id="attachSnapshot" type="checkbox">
+      <label for="attachSnapshot">แนบภาพหน้าจอตอนนั้นไปกับ Discord</label>
+    </div>
+    <p class="hint">ปิดข้อนี้ถ้าไม่อยากให้อะไรก็ตามที่อยู่บนจอตอนนั้นหลุดออกไป</p>
+
+    <div class="check">
+      <input id="keepAwake" type="checkbox">
+      <label for="keepAwake">กันจอหลับระหว่างมอนิเตอร์</label>
+    </div>
+    <p class="hint">จอหลับ = หน้าประชุมหยุดวาดภาพ = สแกนไปก็เจอแต่เฟรมค้าง</p>
+  </section>
+
+  <section>
+    <h2>ประวัติ</h2>
+    <label for="maxLog">เก็บย้อนหลัง <b id="maxLogLabel">50</b> รายการ</label>
+    <input id="maxLog" type="range" min="10" max="200" step="10">
+    <div class="row">
+      <button id="clearLog" class="secondary">ล้างประวัติ</button>
+      <button id="clearSeen" class="secondary">ล้างรายการ QR ที่เคยเตือน</button>
+      <span id="clearResult" class="muted"></span>
+    </div>
+    <p class="hint">ล้างรายการที่เคยเตือน = QR อันเดิมจะถูกเตือนใหม่อีกครั้ง (มีประโยชน์ตอนทดสอบ)</p>
+  </section>
+
+  <p id="saved" class="saved" hidden>บันทึกแล้ว</p>
+  <audio id="sample" src="../assets/alert.wav" preload="auto"></audio>
+</main>
+<script type="module" src="options.js"></script>
+</body>
+</html>
