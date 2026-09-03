@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>บันทึกที่เก็บไว้ — Magpie</title>
+  <link rel="stylesheet" href="options.css">
+  <style>
+    .session { display: flex; gap: 14px; align-items: flex-start; }
+    .session-main { flex: 1; min-width: 0; }
+    .session h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
+    .chip {
+      font-size: 11px; padding: 2px 9px; border-radius: 999px;
+      background: #26282d; color: var(--muted); border: 1px solid var(--line);
+    }
+    .chip.on { color: var(--accent); border-color: rgba(245,158,11,.35); }
+    .bar { height: 4px; border-radius: 2px; background: #26282d; overflow: hidden; margin-top: 10px; }
+    .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+    .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+    .usage { font-size: 12px; color: var(--muted); text-align: right; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="../assets/icon128.png" alt="">
+    <div>
+      <h1>บันทึกที่เก็บไว้</h1>
+      <p class="muted">ทุกอย่างอยู่ในเครื่องนี้เท่านั้น — ส่งออกเป็น ZIP หรือลบทิ้งได้</p>
+    </div>
+  </header>
+
+  <p id="usage" class="usage"></p>
+  <div id="list"><p class="empty">กำลังอ่าน…</p></div>
+</main>
+
+<script src="../lib/fflate.min.js"></script>
+<script type="module" src="sessions.js"></script>
+</body>
+</html>

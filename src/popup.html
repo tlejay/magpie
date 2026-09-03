@@ -19,6 +19,25 @@
 
   <section id="warn" class="warn" hidden></section>
 
+  <section class="tools">
+    <p class="label">เครื่องมือ <span id="toolsNote" class="muted"></span></p>
+    <label class="tool" for="enableQr">
+      <input id="enableQr" type="checkbox">
+      <span class="tool-icon">👁</span>
+      <span class="tool-text"><b>เฝ้าหา QR</b><small>เจอแล้วเตือน + ส่งเข้า Discord</small></span>
+    </label>
+    <label class="tool" for="enableAudio">
+      <input id="enableAudio" type="checkbox">
+      <span class="tool-icon">🔊</span>
+      <span class="tool-text"><b>อัดเสียง</b><small>เสียงยังออกลำโพงปกติ</small></span>
+    </label>
+    <label class="tool" for="enableSlides">
+      <input id="enableSlides" type="checkbox">
+      <span class="tool-icon">🖼</span>
+      <span class="tool-text"><b>จับภาพสไลด์</b><small>บันทึกเมื่อสไลด์เปลี่ยน</small></span>
+    </label>
+  </section>
+
   <section class="target">
     <p class="label">แท็บเป้าหมาย</p>
     <p id="tabTitle" class="tab-title">กำลังอ่าน…</p>
@@ -26,20 +45,28 @@
 
   <button id="toggle" class="primary">เริ่มมอนิเตอร์แท็บนี้</button>
 
-  <section id="stats" class="stats" hidden>
-    <div><span id="scanCount">0</span><small>สแกนแล้ว</small></div>
-    <div><span id="filteredCount">0</span><small>กรองทิ้ง</small></div>
-    <div><span id="lastScan">—</span><small>สแกนล่าสุด</small></div>
-    <div><span id="uptime">—</span><small>เฝ้ามาแล้ว</small></div>
+  <section id="audioPanel" class="audio" hidden>
+    <div class="check">
+      <input id="passthrough" type="checkbox">
+      <label for="passthrough">ส่งเสียงออกลำโพงจริง</label>
+    </div>
+    <div class="meters">
+      <div><small>แท็บ</small><div class="meter"><i id="mTab"></i></div></div>
+      <div><small id="micLabel">ไมค์</small><div class="meter"><i id="mMic"></i></div></div>
+    </div>
   </section>
 
+  <section id="stats" class="stats" hidden></section>
+
   <section class="log">
-    <p class="label">ประวัติที่เจอ <a id="openOptions" href="#">ตั้งค่า</a></p>
+    <p class="label">ประวัติที่เจอ <a id="openSessions" href="#">บันทึกที่เก็บไว้</a></p>
     <ul id="logList"><li class="empty">ยังไม่เจอ QR</li></ul>
   </section>
 
   <footer>
-    <a id="openTest" href="#">เปิดหน้าทดสอบ</a>
+    <a id="openTest" href="#">ทดสอบ QR</a>
+    <a id="openSlideTest" href="#">ทดสอบสไลด์</a>
+    <a id="openOptions" href="#">ตั้งค่า</a>
     <span id="msg" class="muted"></span>
   </footer>
 

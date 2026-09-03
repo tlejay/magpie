@@ -1,11 +1,12 @@
 // Orchestrator. Owns the offscreen document's lifecycle, the alerting rules,
-// the Discord webhook and the watchdog that catches a silently dead monitor.
+// the Discord webhook, and the watchdog that catches a silently dead session.
 
 import {
   getSettings, saveSettings, getState, setState, resetState,
   addLogEntry, updateLogEntry, getSeen, markSeen, DEFAULT_SETTINGS,
 } from './shared/storage.js';
 import { extractUrl, passesFilter, isBlocked } from './shared/qr.js';
+import { putQrHit } from './shared/db.js';
 
 const OFFSCREEN_PATH = 'src/offscreen.html';
 const WATCHDOG_ALARM = 'magpie-watchdog';
@@ -22,8 +23,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(reconcileAfterRestart);
 
 // A browser restart kills the offscreen document but leaves our stored state
-// claiming we're monitoring. Left alone that's the worst possible failure:
-// Tle thinks a guard is watching when nothing is.
+// claiming we're still running. Left alone that's the worst possible failure:
+// the user believes something is watching and recording when nothing is.
 async function reconcileAfterRestart() {
   const state = await getState();
   if (!state.monitoring) return;
@@ -35,8 +36,8 @@ async function reconcileAfterRestart() {
 
 /**
  * Pre-fill the webhook URL from src/config.local.js on first install.
- * That file is gitignored, so the secret never reaches the repo but Tle also
- * never has to paste it by hand.
+ * That file is gitignored, so the secret never reaches the repo but the user
+ * also never has to paste it by hand.
  */
 async function seedWebhookFromLocalConfig() {
   const settings = await getSettings();
@@ -63,11 +64,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     START_MONITOR: () => startMonitor(msg),
     STOP_MONITOR: () => stopMonitor('user'),
     QR_FOUND: () => handleQrFound(msg),
+    SLIDE_SAVED: () => handleSlideSaved(msg),
+    AUDIO_NOTICE: () => handleAudioNotice(msg),
     HEARTBEAT: () => handleHeartbeat(msg),
-    CAPTURE_ENDED: () => handleCaptureLost(msg.reason || 'stream ended'),
+    CAPTURE_ENDED: () => handleCaptureLost(msg.reason || 'สัญญาณถูกตัด'),
     CAPTURE_ERROR: () => handleCaptureLost(msg.error || 'capture error'),
     TEST_WEBHOOK: () => testWebhook(msg.webhookUrl),
     APPLY_SETTINGS: () => applySettingsToCapture(),
+    SET_PASSTHROUGH: () => proxyToOffscreen({ type: 'SET_PASSTHROUGH', on: msg.on }),
+    SET_OUTPUT_DEVICE: () => proxyToOffscreen({ type: 'SET_OUTPUT_DEVICE', deviceId: msg.deviceId }),
+    GET_LEVELS: () => proxyToOffscreen({ type: 'GET_LEVELS' }),
   };
 
   const fn = handlers[msg.type];
@@ -76,19 +82,39 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   Promise.resolve()
     .then(fn)
     .then((result) => sendResponse({ ok: true, ...(result || {}) }))
-    .catch((err) => sendResponse({ ok: false, error: String(err && err.message || err) }));
+    .catch((err) => sendResponse({ ok: false, error: String(err?.message || err) }));
   return true;
 });
 
-// ---------------------------------------------------------------- monitoring
+async function proxyToOffscreen(msg) {
+  if (!(await hasOffscreen())) return { applied: false };
+  const res = await sendToOffscreen(msg).catch(() => null);
+  return res || { applied: false };
+}
+
+// ---------------------------------------------------------------- session
 
 async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
   if (!streamId) throw new Error('ไม่ได้ stream id จากแท็บ');
 
-  await ensureOffscreen();
   const settings = await getSettings();
+  const features = {
+    qr: !!settings.enableQr,
+    audio: !!settings.enableAudio,
+    slides: !!settings.enableSlides,
+  };
+  if (!features.qr && !features.audio && !features.slides) {
+    throw new Error('เปิดเครื่องมืออย่างน้อยหนึ่งอย่างก่อน');
+  }
+  if (settings.enableAudio && settings.audioSource === 'native') {
+    throw new Error('โหมด native ยังไม่พร้อมใช้ — เลือก tab ก่อน');
+  }
 
-  const res = await sendToOffscreenReady({ type: 'START_CAPTURE', streamId, settings });
+  await ensureOffscreen();
+
+  const res = await sendToOffscreenReady({
+    type: 'START_CAPTURE', streamId, settings, features, tabTitle, tabUrl,
+  });
   if (!res || !res.ok) {
     await closeOffscreen();
     throw new Error(res?.error || 'เริ่ม capture ไม่สำเร็จ');
@@ -101,29 +127,39 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
     lastScanAt: null,
     lastHeartbeatAt: Date.now(),
     scanCount: 0,
+    filteredCount: 0,
+    slideCount: 0,
+    audioChunks: 0,
     frameW: res.frameW || 0,
     frameH: res.frameH || 0,
     engine: res.engine || '',
+    sessionId: res.sessionId || null,
+    features,
+    recording: !!res.recording,
+    micIncluded: !!res.micIncluded,
+    audioNotice: '',
     lastError: '',
   });
 
   if (settings.keepAwake) await requestKeepAwake();
   await chrome.alarms.create(WATCHDOG_ALARM, { periodInMinutes: WATCHDOG_MINUTES });
-  await setBadge('ON', '#1DB954');
+  await refreshBadge();
 
-  return { engine: res.engine, frameW: res.frameW, frameH: res.frameH };
+  return { sessionId: res.sessionId, engine: res.engine, recording: res.recording, micIncluded: res.micIncluded };
 }
 
 async function stopMonitor(reason) {
+  let summary = null;
   if (await hasOffscreen()) {
-    await sendToOffscreen({ type: 'STOP_CAPTURE' }).catch(() => {});
+    const res = await sendToOffscreen({ type: 'STOP_CAPTURE' }).catch(() => null);
+    summary = res?.summary || null;
     await closeOffscreen();
   }
   await chrome.alarms.clear(WATCHDOG_ALARM);
   await releaseKeepAwake();
   await resetState();
   await setBadge('');
-  return { reason };
+  return { reason, summary };
 }
 
 async function applySettingsToCapture() {
@@ -136,23 +172,35 @@ async function applySettingsToCapture() {
   }
 
   if (await hasOffscreen()) {
+    // Only live-tunable values. Turning a whole tool on or off changes the
+    // capture constraints, so that needs a restart, not a config push.
     await sendToOffscreen({
       type: 'UPDATE_CONFIG',
       config: {
         intervalSec: settings.intervalSec,
         attachSnapshot: settings.attachSnapshot,
         volume: settings.volume,
+        passthrough: settings.passthrough,
+        slideIntervalSec: settings.slideIntervalSec,
+        blockDelta: settings.blockDelta,
+        changeThreshold: settings.changeThreshold,
+        stableThreshold: settings.stableThreshold,
+        stabilityChecks: settings.stabilityChecks,
+        slideQuality: settings.slideQuality,
+        maxSlides: settings.maxSlides,
       },
     }).catch(() => {});
   }
   return { applied: true };
 }
 
-async function handleHeartbeat({ scanCount, frameW, frameH }) {
+async function handleHeartbeat({ scanCount, slideCount, audioChunks, frameW, frameH }) {
   const state = await getState();
   if (!state.monitoring) return;
   await setState({
     scanCount: scanCount ?? state.scanCount,
+    slideCount: slideCount ?? state.slideCount,
+    audioChunks: audioChunks ?? state.audioChunks,
     lastScanAt: Date.now(),
     lastHeartbeatAt: Date.now(),
     frameW: frameW || state.frameW,
@@ -160,13 +208,40 @@ async function handleHeartbeat({ scanCount, frameW, frameH }) {
   });
 }
 
+async function handleSlideSaved({ seq, offsetMs }) {
+  const state = await getState();
+  if (!state.monitoring) return;
+  await setState({ slideCount: seq ?? state.slideCount + 1, lastHeartbeatAt: Date.now() });
+  return { seq, offsetMs };
+}
+
+// A denied microphone or a failed sink must be visible. Silently producing a
+// recording that is missing half the conversation is the worst outcome here.
+async function handleAudioNotice({ code, detail }) {
+  const messages = {
+    'mic-unavailable': 'ใช้ไมโครโฟนไม่ได้ — กำลังอัดเฉพาะเสียงจากแท็บ',
+    'sink-unavailable': 'เลือกลำโพงปลายทางไม่ได้ — ใช้ลำโพงค่าเริ่มต้นแทน',
+    'chunk-write-failed': 'เขียนไฟล์เสียงลงเครื่องไม่สำเร็จ',
+    'recorder-error': 'ตัวอัดเสียงมีปัญหา',
+  };
+  const message = messages[code] || `เสียงมีปัญหา: ${code}`;
+  // setState spreads the patch, so an `undefined` value would wipe the stored
+  // one — only include micIncluded when it actually changed.
+  const patch = { audioNotice: message };
+  if (code === 'mic-unavailable') patch.micIncluded = false;
+  await setState(patch);
+  await notifyPlain('Magpie', `${message}${detail ? `\n(${detail})` : ''}`);
+  return { code };
+}
+
 async function handleCaptureLost(reason) {
   const state = await getState();
   if (!state.monitoring) return;
+  const wasRecording = state.recording;
   await stopMonitor(reason);
   await notifyPlain(
-    'มอนิเตอร์หลุดแล้ว',
-    `หยุดเฝ้าแท็บเพราะ: ${reason}\nกดที่ไอคอน extension เพื่อเริ่มใหม่`
+    'หยุดทำงานแล้ว',
+    `${reason}${wasRecording ? '\nไฟล์เสียงที่อัดไว้ถูกบันทึกไว้แล้ว' : ''}\nกดที่ไอคอน Magpie เพื่อเริ่มใหม่`
   );
 }
 
@@ -195,25 +270,33 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   const pong = await sendToOffscreen({ type: 'PING' }).catch(() => null);
   if (!pong || !pong.ok || !pong.running || !pong.live) {
-    await handleCaptureLost('stream ไม่ตอบสนอง');
+    await handleCaptureLost('สตรีมไม่ตอบสนอง');
     return;
   }
 
+  await setState({
+    lastHeartbeatAt: Date.now(),
+    slideCount: pong.slideCount ?? state.slideCount,
+    audioChunks: pong.audioChunks ?? state.audioChunks,
+  });
+
   // Alive but not producing frames? Say so rather than pretending it's fine.
   const settings = await getSettings();
-  const stallLimit = Math.max(settings.intervalSec * 3, 180) * 1000;
-  if (state.lastScanAt && Date.now() - state.lastScanAt > stallLimit) {
-    await notifyPlain(
-      'มอนิเตอร์ค้าง',
-      `ไม่ได้สแกนมา ${Math.round((Date.now() - state.lastScanAt) / 60000)} นาทีแล้ว — ลองกดหยุดแล้วเริ่มใหม่`
-    );
-    await setState({ lastError: 'stalled' });
+  if (state.features?.qr && state.lastScanAt) {
+    const stallLimit = Math.max(settings.intervalSec * 3, 180) * 1000;
+    if (Date.now() - state.lastScanAt > stallLimit) {
+      await notifyPlain(
+        'Magpie ค้าง',
+        `ไม่ได้สแกนมา ${Math.round((Date.now() - state.lastScanAt) / 60000)} นาทีแล้ว — ลองหยุดแล้วเริ่มใหม่`
+      );
+      await setState({ lastError: 'stalled' });
+    }
   }
 });
 
 // ---------------------------------------------------------------- QR handling
 
-async function handleQrFound({ values, pass, scanCount, frameW, frameH, snapshot, thumb }) {
+async function handleQrFound({ values, pass, scanCount, frameW, frameH, snapshot, thumb, offsetMs }) {
   const settings = await getSettings();
   const state = await getState();
   const now = Date.now();
@@ -264,21 +347,22 @@ async function handleQrFound({ values, pass, scanCount, frameW, frameH, snapshot
     const id = `qr_${now}_${Math.random().toString(36).slice(2, 8)}`;
 
     await addLogEntry({
-      id,
-      ts: now,
-      text: value,
-      url,
-      pass,
+      id, ts: now, text: value, url, pass,
       thumb: thumb || null,
       tabTitle: state.tabTitle,
       webhookOk: null,
     });
 
+    // Also record it against the session so it lands on the exported timeline.
+    if (state.sessionId) {
+      await putQrHit(state.sessionId, { text: value, url, offsetMs: offsetMs ?? null, pass })
+        .catch(() => {});
+    }
+
     await notifyQr(id, value, url);
 
     const result = await sendToDiscord(settings, {
-      text: value,
-      url,
+      text: value, url,
       snapshot: settings.attachSnapshot ? snapshot : null,
       tabTitle: state.tabTitle,
       ts: now,
@@ -292,10 +376,11 @@ async function handleQrFound({ values, pass, scanCount, frameW, frameH, snapshot
 // ---------------------------------------------------------------- notifications
 
 async function notifyQr(id, text, url) {
+  const domain = domainOf(url);
   const opts = {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('assets/icon128.png'),
-    title: 'QR Code Detected',
+    title: domain ? `QR Code Detected · ${domain}` : 'QR Code Detected',
     message: url || text.slice(0, 300),
     contextMessage: 'Magpie',
     priority: 2,
@@ -330,7 +415,7 @@ async function openNotificationTarget(notificationId) {
   delete notifUrls[notificationId];
   await chrome.storage.session.set({ notifUrls });
   await chrome.notifications.clear(notificationId);
-  await setBadge((await getState()).monitoring ? 'ON' : '', '#1DB954');
+  await refreshBadge();
 }
 
 chrome.notifications.onClicked.addListener(openNotificationTarget);
@@ -343,6 +428,10 @@ chrome.notifications.onButtonClicked.addListener((id, idx) => {
 async function sendToDiscord(settings, { text, url, snapshot, tabTitle, ts }) {
   if (!settings.webhookUrl) return { ok: false, error: 'ยังไม่ได้ตั้ง webhook URL' };
 
+  const domain = domainOf(url);
+
+  // State what was found; never guess what the link is for. An earlier version
+  // called every QR a survey, which was wrong the first time it fired for real.
   const embed = {
     title: 'QR Code Detected',
     description: '```\n' + text.slice(0, 1500) + '\n```',
@@ -355,7 +444,7 @@ async function sendToDiscord(settings, { text, url, snapshot, tabTitle, ts }) {
 
   const payload = {
     username: 'Magpie',
-    content: `🔍 **QR Code Detected**${domainOf(url) ? ` · ${domainOf(url)}` : ''}${url ? `\n${url}` : ''}`,
+    content: `🔍 **QR Code Detected**${domain ? ` · ${domain}` : ''}${url ? `\n${url}` : ''}`,
     embeds: [embed],
   };
 
@@ -378,7 +467,7 @@ async function sendToDiscord(settings, { text, url, snapshot, tabTitle, ts }) {
       const body = await res.text().catch(() => '');
       if (attempt === 1) return { ok: false, error: `HTTP ${res.status} ${body.slice(0, 200)}` };
     } catch (err) {
-      if (attempt === 1) return { ok: false, error: String(err && err.message || err) };
+      if (attempt === 1) return { ok: false, error: String(err?.message || err) };
     }
     await sleep(1500);
   }
@@ -448,7 +537,7 @@ async function sendToOffscreenReady(msg, attempts = 8) {
       return await sendToOffscreen(msg);
     } catch (err) {
       lastErr = err;
-      if (!/Receiving end does not exist|Could not establish connection/i.test(String(err.message || err))) {
+      if (!/Receiving end does not exist|Could not establish connection/i.test(String(err?.message || err))) {
         throw err;
       }
       await sleep(120);
@@ -469,6 +558,14 @@ async function releaseKeepAwake() {
 async function setBadge(text, color) {
   await chrome.action.setBadgeText({ text });
   if (color) await chrome.action.setBadgeBackgroundColor({ color });
+}
+
+/** Red while recording, green while only watching — the difference matters. */
+async function refreshBadge() {
+  const state = await getState();
+  if (!state.monitoring) return setBadge('');
+  if (state.recording) return setBadge('REC', '#FF3B30');
+  return setBadge('ON', '#1DB954');
 }
 
 /** Bare hostname for the alert line, so a phone notification is triageable at a glance. */

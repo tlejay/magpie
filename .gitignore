@@ -15,3 +15,4 @@ src/config.local.js
 # Scratch
 _tmp/
 *.log
+.impeccable/

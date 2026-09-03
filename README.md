@@ -1,26 +1,34 @@
-# Zoom QR Watcher
+# Magpie
 
-**A Chrome extension that watches your Zoom tab so you don't have to.**
-When a QR code appears on the shared screen, it fires a desktop notification, plays a sound, and pushes the decoded link to Discord — so you don't have to keep half an eye on the screen the whole way through.
+**Collects what your meeting leaves behind.**
+A Chrome extension that watches any meeting tab and keeps the parts worth keeping — the QR code that flashed past, the audio, and every slide that went up — without sending a single frame anywhere.
 
-![Manifest V3](https://img.shields.io/badge/Manifest-V3-0b5cff)
+![Manifest V3](https://img.shields.io/badge/Manifest-V3-f59e0b)
 ![No AI](https://img.shields.io/badge/AI-none-1db954)
-![Dependencies](https://img.shields.io/badge/build%20step-none-1db954)
-![Runs locally](https://img.shields.io/badge/frames-never%20leave%20your%20machine-1db954)
+![Build step](https://img.shields.io/badge/build%20step-none-1db954)
+![Local](https://img.shields.io/badge/processing-100%25%20local-1db954)
 
 <p align="center">
-  <img src="docs/popup.png" width="380" alt="Popup showing an active monitor and two detected QR codes">
+  <img src="docs/popup.png" width="360" alt="Magpie popup with all three tools running">
 </p>
+
+| | |
+|---|---|
+| 👁 **Watch** | Finds QR codes on screen, alerts you, and pushes the link to Discord |
+| 🔊 **Listen** | A virtual speaker — audio still plays normally while a copy is recorded locally, mixed with your microphone |
+| 🖼 **Collect** | Saves a screenshot every time the slide actually changes, decided by comparing images on your machine |
+
+Works with any meeting that runs in a Chrome tab: Zoom web client, Google Meet, Microsoft Teams, Webex, or a livestream. Nothing in it is tied to a particular platform — it reads pixels and audio from the tab you point it at.
 
 ---
 
 ## Why this exists
 
-Many webinars put a QR code on screen partway through, linking to an attendance or feedback form you need to submit to be counted. It can show up at any point, usually without warning — so the only reliable way not to miss it is to keep watching the screen the entire session.
+Meetings leak things. A QR code appears for ninety seconds and you had looked away. A number gets said once and never written down. A slide with the one diagram you needed goes past in four seconds. The usual fix is to keep half your attention on the screen for an hour so you don't miss the two minutes that mattered.
 
-That's a timing problem, and timing problems are what computers are for. This keeps watch for you, so you can follow the session on your own terms and still catch the form the moment it goes up.
+That's a timing problem, and timing problems are what computers are for.
 
-**What it does not do:** it does not fill in the form, fake your attendance, or interact with Zoom in any way. It tells you a QR code appeared. You still do the rest.
+**What it does not do:** it does not fill in forms, fake your attendance, join meetings for you, or interpret anything. It notices, it saves, it tells you. What to do next is still yours.
 
 ---
 
@@ -28,36 +36,147 @@ That's a timing problem, and timing problems are what computers are for. This ke
 
 ```mermaid
 flowchart TD
-    A["popup.js<br/>user clicks Start"] -->|"getMediaStreamId()<br/>inside the user gesture"| B["service-worker.js"]
-    B -->|"chrome.offscreen.createDocument()"| C["offscreen document<br/>(hidden page, stays alive)"]
-    C -->|"holds the MediaStream<br/>grabs 1 frame per interval"| D{"decode QR"}
-    D -->|"nothing found"| E["frame discarded<br/>never stored, never sent"]
-    D -->|"found"| F["service-worker.js"]
-    F --> G["dedupe + cooldown"]
-    G --> H["desktop notification + sound"]
-    G --> I["Discord webhook<br/>link + snapshot"]
-    G --> J["local log"]
+    P["popup — pick the tab, arm the tools"] -->|"getMediaStreamId()"| SW["service worker"]
+    SW -->|"createDocument()"| OFF["offscreen document<br/>(hidden, stays alive)"]
+
+    OFF --> V["video track"]
+    OFF --> A["audio track"]
+
+    V -->|"every ~60s"| QR["QR decode"]
+    V -->|"every ~3s"| SL["slide comparison"]
+
+    A --> PT["passthrough → your speakers"]
+    A --> MIX["mixer"]
+    MIC["microphone"] --> MIX
+    MIX --> REC["recorder → 5s chunks"]
+
+    QR -->|"found"| ALERT["notification · sound · Discord"]
+    SL -->|"changed"| IDB[("IndexedDB")]
+    REC --> IDB
+    IDB --> ZIP["export → ZIP + timeline.md"]
 ```
 
-1. `chrome.tabCapture` opens a live video stream of the Zoom tab — like screen sharing, but to yourself.
-2. Every N seconds one frame is drawn to an in-memory canvas.
-3. Chrome's built-in `BarcodeDetector` decodes it. On macOS that's Apple's Vision framework: fast, accurate, offline.
-4. Found → alert. Not found → the frame is dropped immediately.
+`chrome.tabCapture` opens one live stream of the tab. Three consumers read from it on their own schedules, each owning its own canvas so an async QR decode can never race a slide comparison.
 
-**No AI, no LLM, no API keys, no cost.** This is plain barcode decoding. `jsQR` ships bundled as a fallback because MV3 forbids loading scripts from the network at runtime.
+**No AI, no model, no API key, no cost.** QR decoding uses Chrome's built-in `BarcodeDetector` (on macOS that is Apple's Vision framework); slide detection is arithmetic on downscaled pixels. `jsQR` ships bundled as a fallback because MV3 forbids loading scripts from the network at runtime.
 
-### Why an offscreen document?
+### Why an offscreen document
 
-MV3 tears down a service worker after ~30s idle. Put the scan loop there and **the monitor dies silently mid-lecture** — the worst possible outcome, because you believe a guard is watching when it isn't.
+MV3 tears down a service worker after roughly 30 seconds idle. Put a scan loop or a `MediaRecorder` there and **it dies silently mid-meeting** — the worst possible outcome, because you believe something is watching and recording when nothing is.
 
-So the `MediaStream` and the scan loop live in an [offscreen document](https://developer.chrome.com/docs/extensions/reference/api/offscreen), which Chrome keeps alive precisely because it holds media. A watchdog alarm plus a `tabs.onRemoved` hook catch the remaining ways it can break, and tell you out loud when they do.
+So the `MediaStream`, the analysers and the recorder all live in an [offscreen document](https://developer.chrome.com/docs/extensions/reference/api/offscreen), which Chrome keeps alive precisely because it holds media. A watchdog alarm and a `tabs.onRemoved` hook catch the rest, and say so out loud when they fire.
+
+---
+
+## 🔊 The virtual speaker
+
+Capturing a tab's audio **mutes that tab**. Chrome hands you the stream and stops playing it. So passthrough is not a feature here, it is a repair:
+
+```
+tab ──┬─(passthrough gain)─→ speakers      ← toggleable, and you pick the device
+      └─────────────────┐
+mic ───(mic gain)───────┴─→ recorder       ← one mixed file, both sides of the call
+```
+
+The microphone is deliberately **never** routed to the speakers. Tab audio into your ears is correct; your own voice fed back into your ears is not.
+
+**This is not a system audio device.** Tools like Loom install a macOS audio driver so a virtual device appears in every app's Speaker menu. A Chrome extension cannot create one. The trade:
+
+| | Magpie (`tab` mode) | A system driver |
+|---|---|---|
+| Needs an install | no | yes |
+| Appears in Zoom's Speaker list | no | yes |
+| Works with desktop apps | no | yes |
+| Works with meetings in a tab | yes | yes |
+| Meeting app must be configured | **no** — it taps the audio before the device | yes |
+
+A `native` mode sits in the settings, clearly marked unfinished, so the choice is visible from day one rather than bolted on later.
+
+---
+
+## 🖼 Slide detection, and why a moving webcam doesn't fool it
+
+Diffing raw pixels fails instantly in a meeting: a presenter's webcam tile changes every frame. So the question asked is not *how much did the picture change* but **what fraction of the screen changed**.
+
+Each frame is reduced to 320×180, split into a 16×9 grid, and each of the 144 blocks is compared against the last saved slide. A change is only saved once it has also stopped moving, which is what stops a fade being captured half-finished.
+
+Measured against synthetic slides with a webcam tile animating throughout:
+
+| Situation | Fraction of screen changed | Result |
+|---|---|---|
+| Only the webcam tile moves | **2.1 – 2.8 %** | ignored ✅ |
+| Mid-fade between two slides | 47.9 % | held, not saved ✅ |
+| An actual slide change | **94.4 – 96.5 %** | captured ✅ |
+
+The gap between noise and signal is roughly 35×, which is why the default 20 % threshold has so much room on either side. Every number above is adjustable.
+
+<p align="center">
+  <img src="docs/slide-detection.jpg" width="700" alt="Two test slides with the animated webcam tile that must not trigger a capture">
+  <br><em>The test harness: two slides, and a webcam tile that never stops moving.</em>
+</p>
+
+---
+
+## 👁 QR detection
+
+Three passes, each only running if the previous one found nothing:
+
+| Pass | What it does | Catches |
+|---|---|---|
+| 1 | Decode the whole frame | Normal-sized QR — ends here 90%+ of the time |
+| 2 | 3×3 tiles, 15% overlap, upscaled 2× | A small QR in a slide corner |
+| 3 | Invert the frame, decode again | White QR on a dark slide |
+
+Measured with the bundled `jsQR` fallback (the native decoder does better) against slides re-compressed to imitate what a meeting actually transmits:
+
+| Captured frame | Quality | QR size on screen | Result |
+|---|---|---|---|
+| 1920×1080 | q55 | down to 64px (0.2% of screen) | ✅ pass 1 |
+| 1280×720 | q30 | 140–90px | ✅ pass 1 |
+| 1280×720 | q30 | **80px** | ✅ **pass 1 missed it — tiling recovered it** |
+| 1280×720 | q30 | ≤70px | ❌ unrecoverable |
+
+Below roughly 1.5 pixels per QR module the information is destroyed by compression, and no amount of upscaling invents it back. Captured resolution matters far more than anything in the algorithm — so **maximise the window**.
+
+### The deny-list
+
+Speakers put a LINE add-friend QR on their intro slide. It fires an alert every time and is never what you were waiting for. So `line.naver.jp` and `lin.ee` ship as default deny-list entries, and you can delete them.
+
+Order of decision: **cooldown → deny-list → allow-list → alert.** Cooldown comes first on purpose — a blocked QR sits on the slide for minutes, and filtering before deduping would count it again on every scan and make the "filtered" figure meaningless.
+
+---
+
+## What you get out
+
+Each session exports as one ZIP:
+
+```
+magpie-2026-09-03-1432/
+├── audio.webm              tab audio + your microphone, one file
+├── slides/
+│   ├── 001_00-03-12.jpg    filenames carry the offset into the recording
+│   └── 002_00-07-45.jpg
+├── qr-codes.json
+├── session.json
+└── timeline.md             ← the part that makes it navigable
+```
+
+`timeline.md` puts everything on one clock, so months later you can find the moment you need:
+
+| เวลา | เกิดอะไร |
+|------|----------|
+| 00:03:12 | 🖼 สไลด์ 001 — `slides/001_00-03-12.jpg` |
+| 00:07:45 | 🖼 สไลด์ 002 — `slides/002_00-07-45.jpg` |
+| 00:14:32 | 🔗 QR — https://forms.gle/aX9kQ2mNpR4vT8wZ |
+
+> A recorder writes its file header before it knows the duration, so audio assembled from streamed chunks reports an unknown length. It plays fine everywhere; if a player refuses to seek, `ffmpeg -i audio.webm -c copy audio-fixed.webm` rewrites the header. The exported `timeline.md` says so too, rather than leaving you to find out.
 
 ---
 
 ## Install
 
 ```bash
-git clone https://github.com/tlejay/ZOOM-QR-Watcher.git
+git clone https://github.com/tlejay/magpie.git
 ```
 
 ```
@@ -68,254 +187,111 @@ git clone https://github.com/tlejay/ZOOM-QR-Watcher.git
 
 No build step, no `npm install`, no `node_modules`. Edit a file, hit Reload, done.
 
-### Connect Discord (optional but the whole point)
+### Discord (optional, for the QR alerts)
 
 ```
 Discord → Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL
 ```
 
-Then either paste it into the extension's **Options** page, or:
+Paste it into **Options**, or:
 
 ```bash
-cp src/config.example.js src/config.local.js
-# paste the URL into config.local.js
+cp src/config.example.js src/config.local.js   # then paste the URL inside
 ```
 
-`src/config.local.js` is gitignored — the secret stays on your machine. The service worker reads it once on install to pre-fill Options.
+`src/config.local.js` is gitignored, so the secret stays on your machine while the options page is still pre-filled for you.
 
-> Install the Discord mobile app and enable notifications for that channel, and the alert reaches your phone.
+### Microphone
+
+An offscreen document cannot raise a permission prompt, so a normal page has to ask on its behalf — Options → **เปิดหน้าอนุญาต**, once. If you decline, recording continues with tab audio only, and says so rather than quietly handing back a file that is missing half the conversation.
 
 ---
 
 ## Usage
 
-1. Join the webinar via the **Zoom web client** ("Join from your browser"), not the desktop app.
-2. On the Zoom tab, click the extension icon → **Start monitoring this tab**.
-3. Green `ON` badge = the watcher is on duty. You're covered if a QR goes up.
+1. Join the meeting **in a Chrome tab** (Zoom's "Join from your browser", Meet, Teams web, …).
+2. Click the Magpie icon, arm the tools you want, then **เริ่มมอนิเตอร์แท็บนี้**.
+3. The badge reads `ON` in green, or `REC` in red while recording.
 
-**To maximise detection:** maximise the Chrome window and hide the participant panel. The bigger the shared screen area, the bigger the QR in the captured frame — and as the benchmark below shows, captured resolution matters far more than anything in the algorithm.
+Tools can't be switched mid-session: they decide what the capture asks Chrome for, which is fixed when the stream opens. Stop, change, start again.
 
----
-
-## Detection benchmark
-
-Measured with the bundled `jsQR` fallback (the native decoder does better) against synthetic slides re-compressed as JPEG to imitate what Zoom actually transmits:
-
-| Captured frame | Quality | QR size on screen | Result |
-|---|---|---|---|
-| 1920×1080 | q55 | 400px → 64px (0.2% of screen) | ✅ decoded on pass 1 |
-| 1280×720 | q30 | 140–90px | ✅ decoded on pass 1 |
-| 1280×720 | q30 | **80px** | ✅ **pass 1 missed it — tiling recovered it** |
-| 1280×720 | q30 | ≤70px | ❌ unrecoverable |
-
-Below roughly **1.5 pixels per QR module** the information is destroyed by compression. Upscaling afterwards cannot invent it back. This is why the extension captures at up to 1920×1080 and why window size is the single biggest lever you control.
-
-<p align="center">
-  <img src="docs/detection-sample.jpg" width="620" alt="Synthetic 1280x720 slide with an 80px QR that only the tiled pass recovered">
-  <br><em>The 80px case: invisible to a whole-frame decode, recovered by pass 2.</em>
-</p>
-
-### The three decode passes
-
-| Pass | What it does | Catches |
-|---|---|---|
-| 1 | Decode the whole frame at once | Normal-sized QR — ends here 90%+ of the time |
-| 2 | 3×3 tiles, 15% overlap, upscaled 2× | Small QR tucked in a slide corner |
-| 3 | Invert the frame, decode again | White QR on a dark slide |
-
-Pass 2 only runs when pass 1 finds nothing, so the usual cost is a single decode per minute.
+**To maximise detection:** maximise the window and hide the participant panel. The bigger the shared area, the bigger the QR and the more of the frame a slide occupies.
 
 ---
 
 ## Settings
 
 <p align="center">
-  <img src="docs/options.png" width="560" alt="Options page">
+  <img src="docs/options.png" width="620" alt="Options page">
 </p>
 
-| Setting | Default | Notes |
-|---|---|---|
-| Discord webhook URL | from `config.local.js` | includes a "send test" button that surfaces the real HTTP status |
-| Scan interval | 60s | 10–300s. More frequent costs almost nothing — the stream is already open |
-| Re-alert cooldown | 30 min | the same QR stays on a slide for minutes; without this you'd be alerted every scan |
-| Keyword filter | empty (alert on all) | e.g. `forms.gle, docs.google` to ignore promotional QRs on slides |
-| Alert sound | on | volume adjustable |
-| Attach snapshot to Discord | on | turn off if you don't want whatever else is on screen leaving the machine |
-| Keep display awake | on | a sleeping display means Zoom stops rendering and every scan sees a frozen frame |
-| History size | 50 | |
+Everything is adjustable: scan intervals, re-alert cooldown, deny- and allow-lists, alert sound and volume, whether snapshots reach Discord, audio source and bitrate and chunk size, passthrough and output device, microphone selection, and every threshold in the slide detector.
 
 ---
 
-## Testing without a real webinar
+## Testing without a real meeting
 
-Click the extension icon → **เปิดหน้าทดสอบ / Open test page**. It simulates a presenter switching to a slide with a QR on it: adjustable delay, adjustable size, swappable payload, and a dark-background mode.
+Two harnesses ship with the extension, reachable from the popup footer.
+
+**`test/qr-test.html`** — a QR appears after a countdown, at a size you choose, with a swappable payload and a dark-background mode. One of the three codes points at `lin.ee`, so you can watch the deny-list work.
+
+**`test/slide-test.html`** — six slides you can advance manually, on a timer, or in a rapid burst, with an adjustable fade and a webcam tile that never stops moving.
 
 ```
-1. Set the interval to 10s in Options so you're not waiting around
-2. Open the test page → Start countdown
-3. Click the extension icon → Start monitoring this tab
-4. When the QR appears you should get all four:
-   ✅ notification   ✅ sound   ✅ Discord message with image   ✅ log entry in the popup
-5. Wait 2–3 more scans → it must NOT alert again  (dedupe works)
-6. Drag "size" down to 80–100px → must still be caught  (tiling works)
-7. Swap to the other QR → must alert  (different payload = different code)
-8. Toggle dark background → must still be caught  (inversion pass works)
+Audio      play a video, start with recording on
+           → you must still HEAR it  (silence = passthrough is broken)
+           → toggle passthrough off and on; sound follows, REC stays
+           → speak: the mic meter moves, and you must NOT hear yourself
+Slides     leave it two minutes with the webcam moving → nothing saved
+           → change a slide → one capture, within ~6 seconds
+           → burst 5 changes → the settled slide, never a mid-animation frame
+QR         forms.gle → alerts · lin.ee → filtered, and the counter goes up
+           → drag the size down to 80px → still caught (tiling)
 ```
-
-Reset the interval to 60s afterwards.
 
 ---
 
 ## Privacy
 
-- Frames are decoded in memory and discarded. Nothing is written to disk unless a QR is found.
-- The only outbound request is the Discord webhook you configure yourself. Snapshot attachment can be turned off.
-- No analytics, no telemetry, no third-party hosts. The manifest grants exactly one host permission: `https://discord.com/api/webhooks/*`.
-- Audio is deliberately **not** captured — requesting tab audio would mute the webinar for you.
-- Monitoring never auto-starts. It requires an explicit click every session, by design.
+- Frames are analysed in memory and discarded. Nothing is written unless a QR is found or a slide changed.
+- Recordings and slides live in IndexedDB **on your machine**. No server, no account, no telemetry.
+- The only outbound request is the Discord webhook you configure. Snapshot attachment can be turned off.
+- One host permission exists in the manifest: `https://discord.com/api/webhooks/*`.
+- Nothing auto-starts. Every session needs an explicit click, and recording shows a red `REC` badge for as long as it runs.
+
+> Many organisations — and the law in some places — require telling people before recording them. That is on you, not on the tool.
 
 ---
 
 ## Limitations
 
-- **Zoom web client only.** The desktop app is invisible to a Chrome extension. Supporting it would mean switching to `chrome.desktopCapture` and granting Chrome macOS Screen Recording permission.
-- A 60-second interval can still miss a QR shown for less than a minute. Lower it to 15–20s if your presenter is quick.
-- Very small or heavily compressed QRs are unrecoverable — see the benchmark.
-- Restarting Chrome stops monitoring; you must start it again. That's intentional, so nothing captures your screen silently.
+- **Meetings must run in a Chrome tab.** Desktop Zoom/Teams are invisible to an extension. That is what the unfinished `native` audio mode would solve.
+- Very small or heavily compressed QR codes are unrecoverable — see the benchmark.
+- Slide thresholds may need tuning for unusual layouts; every value is exposed.
+- DRM-protected video (Netflix and friends) captures as black frames. Untested.
+- Restarting Chrome ends the session. Deliberate: nothing should be capturing your screen silently.
 
 ---
 
 ## Project layout
 
 ```
-manifest.json              MV3 manifest
-src/service-worker.js      orchestrator: offscreen lifecycle, dedupe, Discord, watchdog
-src/offscreen.html/.js     hidden page holding the stream + the scan loop
-src/shared/qr.js           decoder: native first, jsQR fallback, tiling, inversion
-src/shared/storage.js      settings / state / log / seen-payload tracking
-src/popup.*                start-stop control, stats, history
-src/options.*              settings page
+manifest.json
+src/service-worker.js      orchestrator: lifecycle, alerts, Discord, watchdog
+src/offscreen.html/.js     the capture hub — one stream, three consumers
+src/shared/qr.js           QR decode: native first, jsQR fallback, tiling, inversion
+src/shared/slides.js       block-signature comparison + settle detection
+src/shared/audio.js        Web Audio graph, passthrough, recorder, chunking
+src/shared/db.js           IndexedDB: sessions, audio chunks, slides, QR hits
+src/shared/export.js       ZIP assembly + timeline.md
+src/popup.*                arm the tools, live meters, history
+src/options.*              every setting
+src/sessions.*             saved sessions: export or delete
+src/permission.*           one-time microphone grant
 src/config.local.js        🔒 your webhook URL (gitignored)
-lib/jsqr.js                bundled fallback decoder
-test/qr-test.html          test harness
+lib/                       jsqr.js, fflate.min.js — vendored, MV3 forbids CDN loads
+test/                      QR and slide harnesses
 ```
-
----
-
-<details>
-<summary><h2>🇹🇭 ภาษาไทย</h2></summary>
-
-### ทำไมถึงมีตัวนี้
-
-webinar หลายงานจะโชว์ QR Code ขึ้นมากลางคาบ ปลายทางเป็นแบบฟอร์มลงชื่อเข้าร่วมหรือแบบประเมินที่ต้องกรอกถึงจะนับ ซึ่งมันโผล่ตอนไหนก็ได้และมักไม่มีสัญญาณบอกล่วงหน้า วิธีเดียวที่จะไม่พลาดคือต้องคอยชำเลืองดูจอไว้ตลอดทั้งคาบ
-
-นี่เป็นปัญหาเรื่องจังหวะเวลา ซึ่งเป็นงานที่เครื่องทำได้ดีกว่าคน ตัวนี้เลยคอยดูให้ เราจะได้ตั้งใจฟังตามจังหวะของตัวเอง แล้วยังกดกรอกฟอร์มได้ทันตอนมันขึ้น
-
-**สิ่งที่มันไม่ทำ:** ไม่กรอกฟอร์มให้ ไม่ปลอมการเข้าเรียน ไม่ยุ่งกับ Zoom เลย มันแค่บอกว่า "QR ขึ้นแล้วนะ" ที่เหลือเรากรอกเอง
-
-### หลักการทำงาน
-
-เปรียบเทียบง่าย ๆ: มันคือ **ยามที่นั่งจ้องจอแทนเรา**
-
-1. ต่อสายภาพสดเข้ากับแท็บ Zoom ผ่าน `chrome.tabCapture` (เหมือนแชร์หน้าจอ แต่แชร์ให้ตัวเอง)
-2. ทุก N วินาที ถ่ายภาพนิ่ง 1 เฟรมลง canvas ในหน่วยความจำ
-3. โยนให้ตัวอ่าน QR ในตัวของ Chrome (`BarcodeDetector`) ถอดรหัส — บน macOS คือ Vision framework ของ Apple เร็ว แม่น ไม่ต้องต่อเน็ต
-4. เจอ → เด้งเตือน + เสียง + ยิง Discord + เก็บ log · ไม่เจอ → ทิ้งภาพนั้นทันที
-
-**ไม่ใช้ AI ไม่ใช้ LLM ไม่มีค่า API** เป็นการถอดรหัสบาร์โค้ดตรง ๆ ทำงานในเครื่องล้วน
-
-### ทำไมต้องมี offscreen document
-
-MV3 ฆ่า service worker ทิ้งเมื่อ idle ประมาณ 30 วินาที ถ้าเอาลูปสแกนไว้ตรงนั้น **มอนิเตอร์จะตายเงียบ ๆ กลางคาบ** ซึ่งเป็นผลลัพธ์ที่แย่ที่สุด เพราะเราจะคิดว่ามียามเฝ้าอยู่ทั้งที่ยามหลับไปแล้ว
-
-stream กับลูปสแกนจึงอยู่ใน offscreen document ที่ Chrome ยอมให้เปิดค้างเพราะกำลังถือ media อยู่ แล้วมี watchdog ทุก 2 นาที บวกกับ hook ตอนแท็บถูกปิด คอยจับกรณีที่เหลือ และ **บอกออกมาดัง ๆ** เวลาหลุด
-
-### ติดตั้ง
-
-```
-1. เปิด chrome://extensions
-2. เปิด Developer mode (มุมขวาบน)
-3. กด Load unpacked แล้วเลือกโฟลเดอร์นี้
-```
-
-ไม่มี build step ไม่ต้อง npm install แก้ไฟล์ → กด Reload → เห็นผลทันที
-
-### ตั้ง Discord
-
-```
-Discord → Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL
-```
-
-เอา URL ไปวางในหน้า Options หรือก๊อป `src/config.example.js` เป็น `src/config.local.js` แล้ววางในนั้น
-ไฟล์ `config.local.js` อยู่ใน `.gitignore` — URL ไม่มีทางหลุดขึ้น GitHub
-
-> ลง Discord app บนมือถือแล้วเปิด notification ของ channel นั้น จะได้เตือนถึงมือถือด้วย
-
-### วิธีใช้จริง
-
-1. เข้า webinar ผ่าน **Zoom web client** (ตอนกดลิงก์ให้เลือก "Join from your browser") ไม่ใช่โปรแกรม Zoom
-2. อยู่ที่แท็บ Zoom → กดไอคอน extension → **เริ่มมอนิเตอร์แท็บนี้**
-3. เห็น badge เขียว `ON` = ยามเริ่มทำงานแล้ว ถ้า QR ขึ้นตอนไหนจะรู้ทัน
-
-**เพื่อให้จับได้แน่ ๆ:** ขยายหน้าต่าง Chrome ให้เต็มจอ และซ่อน participant panel — ยิ่ง share screen กินพื้นที่มาก QR ในภาพยิ่งใหญ่ ซึ่งจากผลทดสอบข้างบน ความละเอียดของภาพสำคัญกว่าอัลกอริทึมมาก
-
-### ผลทดสอบตัวถอดรหัส
-
-ทดสอบด้วย jsQR (ตัวสำรอง — ของระบบดีกว่านี้) บนสไลด์จำลองที่บีบอัดแบบเดียวกับที่ Zoom ส่งจริง:
-
-| ภาพที่จับได้ | คุณภาพ | ขนาด QR บนจอ | ผล |
-|---|---|---|---|
-| 1920×1080 | q55 | 400px ลงไปถึง 64px (0.2% ของจอ) | ✅ อ่านได้ตั้งแต่รอบแรก |
-| 1280×720 | q30 | 140–90px | ✅ อ่านได้รอบแรก |
-| 1280×720 | q30 | **80px** | ✅ **รอบแรกพลาด ระบบซูมหาเก็บได้** |
-| 1280×720 | q30 | 70px ลงไป | ❌ ข้อมูลหายถาวร |
-
-ต่ำกว่าประมาณ **1.5 พิกเซลต่อ 1 ช่องของ QR** คือจุดที่ข้อมูลถูกการบีบอัดทำลายไปแล้ว ขยายภาพทีหลังก็ไม่ช่วย
-
-### การอ่าน 3 ชั้น
-
-| ชั้น | ทำอะไร | จับเคสไหน |
-|---|---|---|
-| 1 | อ่านทั้งเฟรมรวดเดียว | QR ขนาดปกติ — จบที่นี่ 90%+ |
-| 2 | หั่น 3×3 ซ้อนขอบ 15% ขยาย 2 เท่า | QR เล็กมุมสไลด์ที่ชั้น 1 มองข้าม |
-| 3 | กลับสีทั้งเฟรม อ่านอีกรอบ | สไลด์พื้นดำ QR ขาว |
-
-ชั้น 2 ทำงานเฉพาะตอนชั้น 1 ไม่เจอ ปกติจึงเสียแค่การอ่าน 1 ครั้งต่อนาที
-
-### ทดสอบก่อนใช้งานจริง
-
-กดไอคอน extension → **เปิดหน้าทดสอบ** จะได้หน้าที่จำลอง "วิทยากรกดสไลด์แล้ว QR โผล่" ปรับเวลา ปรับขนาด สลับ payload และเปิดพื้นดำได้
-
-```
-1. ตั้ง interval ใน Options เป็น 10 วินาที จะได้ไม่ต้องรอนาน
-2. เปิดหน้าทดสอบ → กด "เริ่มนับถอยหลัง"
-3. รีบกดไอคอน extension → "เริ่มมอนิเตอร์แท็บนี้"
-4. พอ QR โผล่ ต้องได้ครบ 4 อย่าง:
-   ✅ notification เด้ง  ✅ มีเสียง  ✅ ข้อความ+รูปเข้า Discord  ✅ log ขึ้นใน popup
-5. ปล่อยอีก 2-3 รอบ → ต้องไม่เตือนซ้ำ (ระบบกันสแปมทำงาน)
-6. ลากแถบ "ขนาด" ลงมาเหลือ 80–100px → ต้องยังจับได้ (ระบบซูมหาทำงาน)
-7. กด "สลับเป็น QR อีกอัน" → ต้องเตือนใหม่ (คนละ payload = คนละอัน)
-8. เปิด "พื้นดำ" → ต้องยังจับได้ (การอ่านแบบกลับสีทำงาน)
-```
-
-ทดสอบเสร็จอย่าลืมตั้ง interval กลับเป็น 60 วินาที
-
-### ความเป็นส่วนตัว
-
-- ภาพถูกถอดรหัสในหน่วยความจำแล้วทิ้งทันที ไม่เขียนลงดิสก์ ยกเว้นตอนเจอ QR
-- request ที่ออกนอกเครื่องมีอย่างเดียวคือ Discord webhook ที่เราตั้งเอง และปิดการแนบรูปได้
-- ไม่มี analytics ไม่มี telemetry ไม่มี host อื่น — manifest ขอสิทธิ์ host แค่ `https://discord.com/api/webhooks/*` ตัวเดียว
-- **ไม่จับเสียง** โดยตั้งใจ เพราะ tab capture ที่ขอเสียงจะ mute เสียง webinar ไปด้วย
-- ไม่เริ่มทำงานเอง ต้องกดเริ่มทุกครั้ง — ตั้งใจให้เป็นแบบนี้ จะได้ไม่มีอะไรแอบจับภาพจอเงียบ ๆ
-
-### ข้อจำกัด
-
-- **ใช้ได้เฉพาะ Zoom web client** โปรแกรม Zoom บนเครื่อง extension มองไม่เห็น (ถ้าจะรองรับต้องเปลี่ยนไปใช้ `chrome.desktopCapture` ซึ่งต้องขอสิทธิ์ Screen Recording ของ macOS)
-- รอบ 60 วินาที ยังมีโอกาสพลาดถ้าวิทยากรโชว์ QR ไม่ถึงนาที — ลดเหลือ 15–20 วิ ได้
-- QR ที่เล็กหรือเบลอเกินไปอ่านไม่ออก ดูตารางผลทดสอบข้างบน
-- รีสตาร์ต Chrome แล้วต้องกดเริ่มมอนิเตอร์ใหม่ (ตั้งใจ)
-
-</details>
 
 ---
 

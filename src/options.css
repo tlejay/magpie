@@ -28,11 +28,13 @@ section {
 }
 label { display: block; font-size: 13px; margin: 14px 0 6px; }
 section > label:first-of-type { margin-top: 0; }
-input[type=url], input[type=text] {
+input[type=url], input[type=text], select {
   width: 100%; padding: 9px 11px; border-radius: 8px; background: #131417;
   border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 13px;
 }
-input[type=url]:focus, input[type=text]:focus { outline: 0; border-color: var(--accent); }
+select { cursor: pointer; }
+input[type=url]:focus, input[type=text]:focus, select:focus { outline: 0; border-color: var(--accent); }
+.hint.bad { color: #ff9a94; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
 .check { display: flex; align-items: center; gap: 9px; margin: 12px 0 0; }
 .check label { margin: 0; }
@@ -50,6 +52,12 @@ button:hover { background: #2f3237; }
 button.tiny { padding: 3px 10px; font-size: 12px; }
 .ok  { color: var(--green); }
 .bad { color: var(--red); }
+
+/* Without this, links fall back to the browser default (dark blue/purple),
+   which is close to unreadable on the dark panel. */
+a { color: #fbbf24; text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:visited { color: #fbbf24; }
 
 .saved {
   position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);

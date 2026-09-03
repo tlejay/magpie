@@ -1,89 +1,108 @@
-# CLAUDE.md — 125 ZOOM (Zoom QR Watcher)
+# CLAUDE.md — Magpie (โฟลเดอร์ 125 ZOOM)
 
-Chrome extension (Manifest V3) ที่เฝ้าแท็บ Zoom web client แล้วแจ้งเตือนเมื่อเจอ QR Code
-รายละเอียดการใช้งานอยู่ใน `README.md` — ไฟล์นี้เก็บเฉพาะสิ่งที่คนแก้โค้ดต้องรู้
+Chrome extension (Manifest V3) เก็บของจากการประชุมออนไลน์: QR Code, เสียง, สไลด์
+วิธีใช้อยู่ใน `README.md` — ไฟล์นี้เก็บเฉพาะสิ่งที่คนแก้โค้ดต้องรู้
+
+> ชื่อโฟลเดอร์ยังเป็น `125 ZOOM` ตามเลขลำดับใน workspace แต่โปรเจคไม่ผูกกับ Zoom แล้ว
+> repo ชื่อ `magpie` ถ้าจะเปลี่ยนชื่อโฟลเดอร์ต้องแก้ `WORKSPACE-INDEX.md` ที่ root ด้วย
 
 ## Stack
 
 **Vanilla JavaScript ล้วน ไม่มี build step ไม่มี npm ไม่มี node_modules**
 แก้ไฟล์ → กด Reload ที่ `chrome://extensions` → เห็นผลทันที
-อย่าเพิ่ม TypeScript / bundler / framework เข้ามาโดยไม่ถาม Tle ก่อน — extension ขนาดนี้ไม่คุ้ม
+อย่าเพิ่ม TypeScript / bundler / framework โดยไม่ถาม Tle ก่อน
 
-## สถาปัตยกรรม — ทำไมถึงต้องมี offscreen document
+`lib/` เก็บ dependency แบบ vendored (`jsqr.js`, `fflate.min.js`) เพราะ **MV3 ห้ามโหลด script จากเน็ตตอน runtime**
 
-MV3 ฆ่า service worker ทิ้งเมื่อ idle ~30 วินาที ถ้าเอาลูปสแกนไว้ใน service worker
-มอนิเตอร์จะ **ตายเงียบ ๆ กลางคาบ** ซึ่งคือ failure mode ที่แย่ที่สุดของโปรเจคนี้
-(Tle คิดว่ามียามเฝ้าอยู่ แต่จริง ๆ ยามหลับไปแล้ว)
+## สถาปัตยกรรม
 
-MediaStream + ลูปสแกนจึงอยู่ใน **offscreen document** ซึ่ง Chrome ยอมให้เปิดค้างเพราะถือ media อยู่
+`offscreen.js` คือ **capture hub** — จับ stream ครั้งเดียวแล้วแจกให้ตัวประมวลผล 3 ตัวที่มีจังหวะต่างกัน
 
 ```
-popup.js ──(user gesture: getMediaStreamId)──► service-worker.js
-                                                    │ createDocument
-                                                    ▼
-                                              offscreen.js
-                                          (holds stream, scan loop)
-                                                    │ QR_FOUND / HEARTBEAT
-                                                    ▼
-                                              service-worker.js
-                                   (dedup → notification → Discord → log)
+popup ─(getMediaStreamId ใน user gesture)→ service-worker ─(createDocument)→ offscreen
+                                                                              ├─ video → QR (60 วิ)
+                                                                              ├─ video → slides (3 วิ)
+                                                                              └─ audio → passthrough + recorder
 ```
 
-### กฎที่ห้ามพัง
+### กฎเหล็ก — ห้ามพัง
 
-1. **`chrome.tabCapture.getMediaStreamId()` ต้องเรียกจาก popup** ภายใน user gesture เท่านั้น
-   ย้ายไป service worker แล้วจะได้ error หรือ stream id ที่ใช้ไม่ได้
-2. **ห้ามขอ `audio: true` ใน getUserMedia** — tab capture ที่ขอเสียงจะ **mute เสียง webinar**
-   ซึ่งทำให้ทั้งเครื่องมือไร้ความหมาย เราต้องการแค่ภาพ
-3. **ห้ามเอาลูปสแกนกลับไปไว้ใน service worker** (ดูเหตุผลข้างบน)
-4. **ห้าม hardcode webhook URL** ลงไฟล์ที่ commit — อ่านจาก `src/config.local.js` ที่ gitignored ไว้
-5. **ห้ามใช้ inline `<script>` หรือ `onclick=`** — MV3 CSP บล็อก ต้องแยกเป็นไฟล์ `.js` เสมอ
-6. **ห้ามโหลด script จาก CDN ตอน runtime** — MV3 ห้าม ทุกอย่างต้องอยู่ใน `lib/`
+1. **ห้ามย้ายลูปสแกนหรือ MediaRecorder ไปไว้ใน service worker** — MV3 ฆ่ามันตอน idle
+   เดิมพันตอนนี้คือ "เสียการอัดทั้งประชุม" ไม่ใช่แค่พลาด QR หนึ่งอัน
+2. **ขอ audio จาก tabCapture เมื่อไหร่ Chrome จะ mute แท็บทันที** ต้องต่อ
+   `tabSource → passthroughGain → ctx.destination` กลับเสมอ ไม่งั้นประชุมเงียบทั้งงาน
+   → ถ้าผู้ใช้ไม่เปิดการอัดเสียง **ห้ามขอ audio ตั้งแต่แรก**
+3. **ห้ามต่อไมค์เข้า `ctx.destination`** เด็ดขาด — จะได้ยินเสียงตัวเองย้อนกลับ
+   ไมค์ต่อเข้า `mixDestination` (ตัวที่ป้อน MediaRecorder) อย่างเดียว
+4. **`chrome.tabCapture.getMediaStreamId()` ต้องเรียกจาก popup** ภายใน user gesture
+   ย้ายไป service worker แล้วจะได้ stream id ที่ใช้ไม่ได้
+5. **ห้าม hardcode webhook URL** — อ่านจาก `src/config.local.js` ที่ gitignored ไว้
+6. **ห้ามใช้ inline `<script>` หรือ `onclick=`** — MV3 CSP บล็อก
+7. **แต่ละ analyzer ต้องมี canvas ของตัวเอง** — QR decode เป็น async ถ้าใช้ canvas ร่วมกับ
+   slide check จะอ่านพิกเซลทับกัน
+8. **ห้ามเดาแทนผู้ใช้ในข้อความแจ้งเตือน** — เคยเขียนว่า "เปิดแบบสอบถาม" แล้วผิดตั้งแต่ครั้งแรก
+   ที่ยิงจริง (ปลายทางเป็นลิงก์ LINE) บอกแค่สิ่งที่รู้จริง: เจอ QR + โดเมนคืออะไร
 
-## กลยุทธ์การอ่าน QR (`src/shared/qr.js`)
+## ตัวเลขที่วัดมาแล้ว (อย่าเดาใหม่)
 
-3 ชั้น เรียงตามราคา — ไม่มี AI เกี่ยวข้องเลย:
+**QR** (jsQR ตัวสำรอง · สไลด์จำลองบีบอัดแบบที่ประชุมส่งจริง)
 
-| ชั้น | ทำอะไร | จับเคสไหน |
+| ภาพที่จับได้ | ขนาด QR | ผล |
 |---|---|---|
-| 1 | อ่านทั้งเฟรมรวดเดียว | QR ขนาดปกติ — จบที่นี่ 90%+ |
-| 2 | หั่น 3×3 ซ้อนขอบ 15% ขยาย 2 เท่า | QR เล็กมุมสไลด์ที่ชั้น 1 มองข้าม |
-| 3 | กลับสีทั้งเฟรม อ่านอีกรอบ | สไลด์พื้นดำ QR ขาว |
+| 1920×1080 q55 | ลงถึง 64px | ชั้น 1 ผ่าน |
+| 1280×720 q30 | 90px | ชั้น 1 ผ่าน |
+| 1280×720 q30 | 80px | ชั้น 1 พลาด **ชั้น 2 (tiling) เก็บได้** |
+| 1280×720 q30 | ≤70px | ข้อมูลหายถาวร |
 
-ตัวเลข GRID / OVERLAP / UPSCALE อยู่บนสุดของไฟล์ ปรับได้ถ้าเจอเคสที่จับไม่ได้
+ต่ำกว่า ~1.5 พิกเซลต่อช่อง QR = จบ ขยายทีหลังไม่ช่วย
+→ อยากให้จับดีขึ้น ให้ไปเพิ่ม **ความละเอียดของภาพที่จับ** ไม่ใช่เพิ่มชั้นการอ่าน
 
-**ผลทดสอบที่ยืนยันแล้ว** (jsQR บนสไลด์จำลอง 1280×720 บีบอัด q30): ชั้น 1 อ่านได้ถึง QR ขนาด 90px
-ที่ 80px ชั้น 1 พลาดแต่ชั้น 2 เก็บได้ · ที่ 70px ลงไปข้อมูลหายถาวร ขยายยังไงก็ไม่กลับมา
-→ ถ้าจะปรับปรุงการจับ ให้ไปเพิ่ม **ความละเอียดของภาพที่จับ** ไม่ใช่ไปเพิ่มชั้นการอ่าน
+**สไลด์** (สไลด์จำลอง + กล่องกล้องที่ขยับตลอด)
+
+| สถานการณ์ | สัดส่วนพื้นที่ที่เปลี่ยน | ผล |
+|---|---|---|
+| กล้องขยับอย่างเดียว | 2.1–2.8% | ไม่จับ |
+| เฟรมกลาง fade | 47.9% | รอ ไม่บันทึก |
+| เปลี่ยนสไลด์จริง | 94.4–96.5% | บันทึก |
+
+ช่องว่างระหว่าง noise กับ signal ราว 35 เท่า — threshold 20% จึงมีที่เหลือเยอะทั้งสองทาง
+**นี่คือเหตุผลที่วัดเป็น "สัดส่วนช่องที่เปลี่ยน" ไม่ใช่ผลต่างพิกเซลรวม** ถ้าเปลี่ยนไปวัดแบบหลัง
+กล้องวิทยากรจะทำให้จับรัวทันที
 
 ## จุดที่พังบ่อยและวิธีตรวจ
 
 | อาการ | ดูที่ |
 |---|---|
 | กดเริ่มแล้วไม่มีอะไรเกิด | `chrome://extensions` → Service worker → Console |
-| ลูปสแกนหยุดเอง | `chrome://extensions` → Inspect views: offscreen.html → Console |
-| Discord ไม่เข้า | Options → ปุ่ม "ทดสอบส่งเข้า Discord" (จะโชว์ HTTP status จริง) |
-| เตือนซ้ำไม่หยุด | ตรวจค่า cooldown · หรือ payload ของ QR เปลี่ยนทุกครั้ง (บาง QR ฝัง timestamp) |
-| ไม่เตือนเลยทั้งที่เห็น QR | ลด interval + ขยายหน้าต่าง Zoom ก่อน แล้วค่อยไปแตะ tiling |
+| ลูปหยุดเอง / การอัดหาย | Inspect views: `offscreen.html` → Console |
+| **เสียงประชุมเงียบ** | passthrough ไม่ได้ต่อ — ดูกฎข้อ 2 |
+| ได้ยินเสียงตัวเองย้อน | ไมค์ต่อเข้า `ctx.destination` — ดูกฎข้อ 3 |
+| Discord ไม่เข้า | Options → ปุ่มทดสอบส่ง (โชว์ HTTP status จริง) |
+| สไลด์จับรัว | เพิ่ม `changeThreshold` หรือ `blockDelta` |
+| สไลด์ไม่จับเลย | ลด `changeThreshold` · เช็คว่าหน้าต่างใหญ่พอ |
 
-`sendToOffscreenReady()` ใน service worker มี retry ไว้แล้ว เพราะ `createDocument()` resolve
-ก่อนที่ `offscreen.js` จะ register listener ได้ทัน — ข้อความแรกเคยหายเพราะเหตุนี้
+`sendToOffscreenReady()` มี retry อยู่แล้ว เพราะ `createDocument()` resolve ก่อนที่ `offscreen.js`
+จะ register listener ทัน — ข้อความแรกเคยหายเพราะเหตุนี้
 
 ## ทดสอบ
 
-หน้าทดสอบอยู่ที่ `test/qr-test.html` (เปิดจากปุ่มใน popup) — จำลอง QR โผล่กลางคัน ปรับขนาดได้ สลับ payload ได้
-ขั้นตอนทดสอบเต็มอยู่ใน README หัวข้อ "ทดสอบก่อนใช้งานจริง"
-
-QR ทดสอบ (`test/qr-a.png`, `qr-b.png`) สร้างด้วย `qrencode` ถ้าจะสร้างใหม่:
 ```bash
-qrencode -o test/qr-a.png -s 12 -m 2 "https://forms.gle/ZoomQRWatcherTestA"
+node /tmp/zqrtest/t2.mjs      # blacklist + ลำดับการตัดสิน (ถ้ายังมีไฟล์อยู่)
+node /tmp/slidetest/run.mjs   # ตัวตรวจสไลด์กับภาพจริง
 ```
+
+หน้าทดสอบในตัว (เปิดจาก popup): `test/qr-test.html` · `test/slide-test.html`
+สร้าง QR ทดสอบใหม่: `qrencode -o test/qr-a.png -s 12 -m 2 "https://…"`
+
+เรนเดอร์ UI ตรวจ layout โดยไม่ต้องโหลด extension: stub ข้อมูลลง HTML แล้ว
+`"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --screenshot=out.png file://…`
 
 ## Git
 
-- private repo ของ Tle · commit + push ได้เลยหลังทำงานเสร็จแต่ละก้อน (ตาม root CLAUDE.md)
-- **ก่อน `git add` ทุกครั้ง** เช็คว่า `src/config.local.js` ยังถูก ignore อยู่:
+- public repo `github.com/tlejay/magpie` · commit + push ได้เลยหลังทำงานเสร็จแต่ละก้อน
+- **ก่อน `git add` ทุกครั้ง** เช็คว่า secret ไม่หลุด:
   ```bash
-  git check-ignore -v src/config.local.js   # ต้องมี output
-  git ls-files | grep -i 'config.local'     # ต้องไม่มี output
+  git ls-files | grep -i 'config.local'          # ต้องไม่มี output
+  git check-ignore -v src/config.local.js        # ต้องมี output
+  git grep -nI 'discord.com/api/webhooks/[0-9]' -- $(git ls-files)   # ต้องไม่มี output
   ```

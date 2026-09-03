@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>อนุญาตไมโครโฟน — Magpie</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+<main>
+  <header>
+    <img src="../assets/icon128.png" alt="">
+    <div>
+      <h1>อนุญาตให้ Magpie ใช้ไมโครโฟน</h1>
+      <p class="muted">ทำครั้งเดียวพอ หลังจากนี้ไม่ต้องกดอีก</p>
+    </div>
+  </header>
+
+  <section>
+    <p class="hint" style="font-size:13px">
+      หน้าที่ทำงานเบื้องหลังของ Magpie เปิดกล่องขออนุญาตเองไม่ได้ (ข้อจำกัดของ Chrome)
+      หน้านี้จึงมาขอแทน — กดปุ่มข้างล่างแล้วเลือก <b>อนุญาต</b> ในกล่องที่เด้งขึ้นมา
+    </p>
+    <div class="row">
+      <button id="grant" class="secondary">ขออนุญาตใช้ไมโครโฟน</button>
+      <span id="result" class="muted"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>ไมโครโฟนที่ใช้ได้</h2>
+    <label for="mic">เลือกตัวที่จะใช้อัด</label>
+    <select id="mic"></select>
+    <p class="hint">ชื่ออุปกรณ์จะขึ้นครบหลังจากอนุญาตแล้วเท่านั้น — ก่อนหน้านั้น Chrome ซ่อนไว้</p>
+    <div class="row">
+      <button id="save" class="secondary">บันทึกตัวเลือกนี้</button>
+      <span id="saved" class="muted"></span>
+    </div>
+  </section>
+</main>
+<script type="module" src="permission.js"></script>
+</body>
+</html>

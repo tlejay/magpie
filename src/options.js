@@ -2,28 +2,61 @@ import { getSettings, saveSettings, clearLog, clearSeen } from './shared/storage
 
 const el = (id) => document.getElementById(id);
 
-const RANGES = [
-  ['intervalSec', 'intervalLabel', (v) => v],
-  ['cooldownMin', 'cooldownLabel', (v) => v],
-  ['volume', 'volumeLabel', (v) => v],
-  ['maxLog', 'maxLogLabel', (v) => v],
+// One declarative table instead of four parallel arrays. `toStore`/`fromStore`
+// keep percentage sliders readable while the stored value stays a 0-1 fraction.
+const FIELDS = [
+  // --- Discord / QR
+  { id: 'webhookUrl', kind: 'text' },
+  { id: 'urlFilter', kind: 'text' },
+  { id: 'urlBlocklist', kind: 'text' },
+  { id: 'intervalSec', kind: 'range' },
+  { id: 'cooldownMin', kind: 'range' },
+  { id: 'soundEnabled', kind: 'check' },
+  { id: 'volume', kind: 'range', toStore: (v) => v / 100, fromStore: (v) => Math.round(v * 100) },
+  { id: 'attachSnapshot', kind: 'check' },
+
+  // --- audio
+  { id: 'audioSource', kind: 'select' },
+  { id: 'passthrough', kind: 'check' },
+  { id: 'outputDeviceId', kind: 'select' },
+  { id: 'recordTabAudio', kind: 'check' },
+  { id: 'recordMic', kind: 'check' },
+  { id: 'audioBitrateKbps', kind: 'select', toStore: Number },
+  { id: 'chunkSeconds', kind: 'range' },
+
+  // --- slides
+  { id: 'slideIntervalSec', kind: 'range' },
+  { id: 'changeThreshold', kind: 'range', toStore: (v) => v / 100, fromStore: (v) => Math.round(v * 100) },
+  { id: 'blockDelta', kind: 'range' },
+  { id: 'stabilityChecks', kind: 'range' },
+  { id: 'slideQuality', kind: 'range', toStore: (v) => v / 100, fromStore: (v) => Math.round(v * 100) },
+  { id: 'maxSlides', kind: 'range' },
+
+  // --- general
+  { id: 'keepAwake', kind: 'check' },
+  { id: 'maxLog', kind: 'range' },
 ];
-const CHECKS = ['soundEnabled', 'attachSnapshot', 'keepAwake'];
-const TEXTS = ['webhookUrl', 'urlFilter', 'urlBlocklist'];
 
 init();
 
 async function init() {
   await reportEngine();
   await load();
+  await listOutputDevices();
 
-  for (const [id] of RANGES) {
-    el(id).addEventListener('input', () => { syncLabels(); persist(); });
+  for (const f of FIELDS) {
+    const node = el(f.id);
+    if (!node) continue;
+    node.addEventListener(f.kind === 'range' ? 'input' : 'change', () => {
+      if (f.kind === 'range') syncLabels();
+      persist();
+    });
+    if (f.kind === 'text') node.addEventListener('blur', persist);
   }
-  for (const id of [...CHECKS, ...TEXTS]) {
-    el(id).addEventListener('change', persist);
-  }
-  el('webhookUrl').addEventListener('blur', persist);
+
+  el('audioSource').addEventListener('change', reflectAudioSource);
+  el('audioBitrateKbps').addEventListener('change', updateSizeHint);
+  el('chunkSeconds').addEventListener('input', updateSizeHint);
 
   el('testWebhook').addEventListener('click', onTestWebhook);
   el('testSound').addEventListener('click', () => {
@@ -31,6 +64,13 @@ async function init() {
     a.volume = Number(el('volume').value) / 100;
     a.currentTime = 0;
     a.play().catch(() => {});
+  });
+  el('openPermission').addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/permission.html') });
+  });
+  el('openSessions').addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/sessions.html') });
   });
   el('clearLog').addEventListener('click', async () => {
     await clearLog();
@@ -59,38 +99,82 @@ async function reportEngine() {
 
 async function load() {
   const s = await getSettings();
-  el('webhookUrl').value = s.webhookUrl;
-  el('urlFilter').value = s.urlFilter;
-  el('urlBlocklist').value = s.urlBlocklist;
-  el('intervalSec').value = s.intervalSec;
-  el('cooldownMin').value = s.cooldownMin;
-  el('volume').value = Math.round(s.volume * 100);
-  el('maxLog').value = s.maxLog;
-  for (const id of CHECKS) el(id).checked = !!s[id];
+  for (const f of FIELDS) {
+    const node = el(f.id);
+    if (!node) continue;
+    const value = f.fromStore ? f.fromStore(s[f.id]) : s[f.id];
+    if (f.kind === 'check') node.checked = !!value;
+    else node.value = value ?? '';
+  }
   syncLabels();
+  reflectAudioSource();
+  updateSizeHint();
 }
 
+/** Every range has a <b id="<id>Label"> next to it. */
 function syncLabels() {
-  for (const [id, labelId, fmt] of RANGES) el(labelId).textContent = fmt(el(id).value);
+  for (const f of FIELDS) {
+    if (f.kind !== 'range') continue;
+    const label = el(`${f.id}Label`);
+    if (label) label.textContent = el(f.id).value;
+  }
+}
+
+/** Make the unfinished mode obviously unfinished, here rather than at start time. */
+function reflectAudioSource() {
+  el('audioSourceHint').classList.toggle('bad', el('audioSource').value === 'native');
+}
+
+function updateSizeHint() {
+  const kbps = Number(el('audioBitrateKbps').value) || 64;
+  const mbPerHour = (kbps * 1000 * 3600) / 8 / 1024 / 1024;
+  el('sizeHint').textContent =
+    `ประมาณ ${mbPerHour.toFixed(0)} MB ต่อชั่วโมง — ประชุม 2 ชม. ราว ${(mbPerHour * 2).toFixed(0)} MB`;
+}
+
+async function listOutputDevices() {
+  const select = el('outputDeviceId');
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const outputs = devices.filter((d) => d.kind === 'audiooutput');
+    const current = select.value;
+    for (const d of outputs) {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      // Chrome hides device labels until microphone permission is granted.
+      opt.textContent = d.label || '(ต้องอนุญาตไมโครโฟนก่อนถึงจะเห็นชื่อ)';
+      select.append(opt);
+    }
+    const settings = await getSettings();
+    select.value = settings.outputDeviceId || current || '';
+  } catch {
+    // Enumeration can fail outright; the default device still works.
+  }
 }
 
 let persistTimer = null;
 function persist() {
   clearTimeout(persistTimer);
   persistTimer = setTimeout(async () => {
-    const patch = {
-      webhookUrl: el('webhookUrl').value.trim(),
-      urlFilter: el('urlFilter').value.trim(),
-      urlBlocklist: el('urlBlocklist').value.trim(),
-      intervalSec: Number(el('intervalSec').value),
-      cooldownMin: Number(el('cooldownMin').value),
-      volume: Number(el('volume').value) / 100,
-      maxLog: Number(el('maxLog').value),
-    };
-    for (const id of CHECKS) patch[id] = el(id).checked;
+    const patch = {};
+    for (const f of FIELDS) {
+      const node = el(f.id);
+      if (!node) continue;
+      let value;
+      if (f.kind === 'check') value = node.checked;
+      else if (f.kind === 'range') value = Number(node.value);
+      else if (f.kind === 'text') value = node.value.trim();
+      else value = node.value;
+      patch[f.id] = f.toStore ? f.toStore(value) : value;
+    }
     await saveSettings(patch);
-    // A capture already in flight should pick up the new interval immediately.
+    // A capture already in flight should pick up the new values immediately.
     chrome.runtime.sendMessage({ target: 'sw', type: 'APPLY_SETTINGS' }).catch(() => {});
+    if (patch.outputDeviceId !== undefined) {
+      chrome.runtime
+        .sendMessage({ target: 'sw', type: 'SET_OUTPUT_DEVICE', deviceId: patch.outputDeviceId })
+        .catch(() => {});
+    }
     toast();
   }, 250);
 }

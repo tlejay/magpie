@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>หน้าทดสอบสไลด์ — Magpie</title>
+  <style>
+    :root { --bg:#f4f5f7; --line:#dcdee3; --panel:#fff; --muted:#6b7280; }
+    * { box-sizing: border-box; }
+    body {
+      margin:0; height:100vh; display:flex; flex-direction:column; background:var(--bg);
+      font:14px/1.6 "Noto Sans Thai",-apple-system,BlinkMacSystemFont,sans-serif; color:#16171a;
+    }
+    .bar {
+      background:var(--panel); border-bottom:1px solid var(--line); padding:10px 16px;
+      display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:12px;
+    }
+    .bar h1 { font-size:13px; margin:0 auto 0 0; }
+    .bar label { display:flex; gap:6px; align-items:center; color:var(--muted); }
+    button {
+      font:inherit; font-size:12px; padding:6px 13px; border-radius:7px;
+      border:1px solid var(--line); background:var(--panel); cursor:pointer;
+    }
+    button.go { background:#f59e0b; border-color:#f59e0b; color:#2a1a00; font-weight:600; }
+
+    /* the "shared screen" */
+    .stage { flex:1; position:relative; overflow:hidden; }
+    .slide {
+      position:absolute; inset:0; padding:6vh 7vw; opacity:0;
+      transition:opacity var(--fade,0ms) linear;
+      display:flex; flex-direction:column; gap:3vh;
+    }
+    .slide.on { opacity:1; }
+    .slide h2 { font-size:4vw; margin:0; }
+    .slide .rule { height:1.6vh; border-radius:4px; }
+    .slide .block { height:18vh; border-radius:10px; }
+
+    /* the presenter's webcam tile — moves constantly, must NEVER trigger a capture */
+    .cam {
+      position:absolute; right:2vw; bottom:2vh; width:13vw; height:14vh;
+      border-radius:10px; border:3px solid rgba(0,0,0,.15);
+      display:flex; align-items:center; justify-content:center;
+      font-size:11px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.5);
+    }
+    .cam.moving { animation: jiggle 1.1s ease-in-out infinite alternate; }
+    @keyframes jiggle {
+      from { transform: translate(0,0) scale(1); filter:hue-rotate(0deg); }
+      to   { transform: translate(-14px,-10px) scale(1.04); filter:hue-rotate(70deg); }
+    }
+    .hud {
+      position:absolute; left:1.5vw; top:1.5vh; background:rgba(0,0,0,.72); color:#fff;
+      padding:6px 12px; border-radius:8px; font-size:12px; font-family:ui-monospace,Menlo,monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <h1>หน้าทดสอบสไลด์ — Magpie</h1>
+    <label><input id="cam" type="checkbox" checked> กล้องวิทยากรขยับตลอด</label>
+    <label>fade <input id="fade" type="range" min="0" max="2000" step="100" value="0" style="width:90px"> <b id="fadeLabel">0</b>ms</label>
+    <label>เปลี่ยนเองทุก <input id="auto" type="number" min="0" max="600" value="0" style="width:52px"> วิ <small>(0=ปิด)</small></label>
+    <button id="prev">← ก่อนหน้า</button>
+    <button id="next" class="go">สไลด์ถัดไป →</button>
+    <button id="burst">เปลี่ยนรัว 5 อัน</button>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="hud" id="hud">สไลด์ 1 / 6</div>
+    <div class="cam moving" id="camBox">กล้องวิทยากร</div>
+  </div>
+
+  <script src="slide-test.js"></script>
+</body>
+</html>

@@ -17,6 +17,7 @@
 
   <p id="engineNote" class="note">กำลังตรวจตัวอ่าน QR…</p>
 
+  <!-- ============================================================ Discord -->
   <section>
     <h2>Discord</h2>
     <label for="webhookUrl">Webhook URL</label>
@@ -31,17 +32,18 @@
     </div>
   </section>
 
+  <!-- ================================================================= QR -->
   <section>
-    <h2>การสแกน</h2>
+    <h2>👁 เฝ้าหา QR</h2>
 
-    <label for="intervalSec">สแกนทุก <b id="intervalLabel">60</b> วินาที</label>
+    <label for="intervalSec">สแกนทุก <b id="intervalSecLabel">60</b> วินาที</label>
     <input id="intervalSec" type="range" min="10" max="300" step="5">
     <p class="hint">
       ยิ่งถี่ยิ่งพลาดยาก และแทบไม่กิน CPU เพิ่ม เพราะภาพมาจาก stream ที่เปิดค้างอยู่แล้ว
       ถ้าวิทยากรชอบโชว์ QR แวบเดียว ลองลดเหลือ 15–20 วินาที
     </p>
 
-    <label for="cooldownMin">ไม่เตือนซ้ำ QR เดิมภายใน <b id="cooldownLabel">30</b> นาที</label>
+    <label for="cooldownMin">ไม่เตือนซ้ำ QR เดิมภายใน <b id="cooldownMinLabel">30</b> นาที</label>
     <input id="cooldownMin" type="range" min="1" max="180" step="1">
     <p class="hint">QR อันเดิมมักค้างบนสไลด์หลายนาที ถ้าไม่กันไว้จะโดนเตือนซ้ำทุกรอบสแกน</p>
 
@@ -54,12 +56,8 @@
     </p>
 
     <label for="urlFilter">กรองเฉพาะที่มีคำเหล่านี้ (คั่นด้วยจุลภาค)</label>
-    <input id="urlFilter" type="text" placeholder="เว้นว่าง = แจ้งทุก QR ที่เจอ" spellcheck="false">
-    <p class="hint">เช่น <code>forms.gle, docs.google, surveymonkey</code> เพื่อไม่ให้ QR โฆษณาในสไลด์มากวน</p>
-  </section>
-
-  <section>
-    <h2>ตอนเจอ QR</h2>
+    <input id="urlFilter" type="text" placeholder="เว้นว่าง = แจ้งทุก QR ที่เหลือ" spellcheck="false">
+    <p class="hint">เช่น <code>forms.gle, docs.google</code> ถ้าอยากรับเฉพาะลิงก์แบบฟอร์ม</p>
 
     <div class="check">
       <input id="soundEnabled" type="checkbox">
@@ -75,20 +73,116 @@
       <label for="attachSnapshot">แนบภาพหน้าจอตอนนั้นไปกับ Discord</label>
     </div>
     <p class="hint">ปิดข้อนี้ถ้าไม่อยากให้อะไรก็ตามที่อยู่บนจอตอนนั้นหลุดออกไป</p>
+  </section>
+
+  <!-- ============================================================== AUDIO -->
+  <section>
+    <h2>🔊 อัดเสียง</h2>
+
+    <label for="audioSource">แหล่งเสียง</label>
+    <select id="audioSource">
+      <option value="tab">แท็บ Chrome (tab) — พร้อมใช้</option>
+      <option value="native">อุปกรณ์เสียงของระบบ (native) — ยังไม่พร้อม</option>
+    </select>
+    <p class="hint" id="audioSourceHint">
+      โหมด <code>tab</code> ดึงเสียงจากแท็บโดยตรง ไม่ต้องลง driver และไม่ต้องให้โปรแกรมประชุมตั้งค่าอะไร
+      แต่ใช้ได้เฉพาะประชุมที่เปิดในแท็บ<br>
+      โหมด <code>native</code> จะโผล่ในช่อง Speaker ของทุกโปรแกรม (แบบเดียวกับ Loom)
+      แต่ต้องมี audio driver ของ macOS กับโปรแกรมคู่หูแยกต่างหาก — <b>ยังทำไม่เสร็จ</b>
+    </p>
+
+    <div class="check">
+      <input id="passthrough" type="checkbox">
+      <label for="passthrough">ส่งเสียงออกลำโพงจริงด้วย</label>
+    </div>
+    <p class="hint">
+      ⚠️ การอัดเสียงจากแท็บทำให้ Chrome ปิดเสียงแท็บนั้น ตัวเลือกนี้คือการต่อเสียงกลับออกลำโพงให้
+      <b>ปิดเมื่อไหร่คือจะไม่ได้ยินเสียงประชุมเลย</b> (แต่ยังอัดอยู่) — ปิดต่อเมื่อฟังจากอุปกรณ์อื่นอยู่แล้ว
+    </p>
+
+    <label for="outputDeviceId">ลำโพงที่จะให้เสียงออก</label>
+    <select id="outputDeviceId"><option value="">ตามค่าเริ่มต้นของระบบ</option></select>
+
+    <div class="check">
+      <input id="recordTabAudio" type="checkbox">
+      <label for="recordTabAudio">อัดเสียงจากแท็บ (เสียงคนอื่น)</label>
+    </div>
+
+    <div class="check">
+      <input id="recordMic" type="checkbox">
+      <label for="recordMic">อัดเสียงจากไมโครโฟนเราด้วย</label>
+    </div>
+    <p class="hint">
+      รวมเป็นไฟล์เดียวกัน จะได้ได้ยินบทสนทนาครบทั้งสองฝั่ง<br>
+      ต้องกดอนุญาตไมโครโฟนก่อนหนึ่งครั้ง — <a id="openPermission" href="#">เปิดหน้าอนุญาต</a>
+    </p>
+
+    <label for="audioBitrateKbps">คุณภาพเสียง</label>
+    <select id="audioBitrateKbps">
+      <option value="32">32 kbps — ประหยัดที่สุด พอสำหรับฟังทวน</option>
+      <option value="64">64 kbps — สมดุล (แนะนำ)</option>
+      <option value="128">128 kbps — ชัดที่สุด ไฟล์ใหญ่ขึ้นเท่าตัว</option>
+    </select>
+    <p class="hint" id="sizeHint"></p>
+
+    <label for="chunkSeconds">เขียนลงเครื่องทุก <b id="chunkSecondsLabel">5</b> วินาที</label>
+    <input id="chunkSeconds" type="range" min="2" max="30" step="1">
+    <p class="hint">
+      ไม่กองไฟล์ทั้งประชุมไว้ในหน่วยความจำ ถ้า Chrome พังกลางทาง เสียแค่ท่อนสุดท้าย
+    </p>
+
+    <p class="note warn" style="margin-top:16px">
+      หลายองค์กรและกฎหมายบางประเทศกำหนดให้แจ้งผู้ร่วมประชุมก่อนบันทึกเสียง
+      ตอนกำลังอัด ไอคอน Magpie จะขึ้น <b>REC</b> สีแดงไว้เตือนตัวเอง
+    </p>
+  </section>
+
+  <!-- ============================================================= SLIDES -->
+  <section>
+    <h2>🖼 จับภาพสไลด์</h2>
+
+    <label for="slideIntervalSec">ตรวจทุก <b id="slideIntervalSecLabel">3</b> วินาที</label>
+    <input id="slideIntervalSec" type="range" min="1" max="30" step="1">
+
+    <label for="changeThreshold">ถือว่าเปลี่ยนสไลด์เมื่อภาพต่างเกิน <b id="changeThresholdLabel">20</b>% ของจอ</label>
+    <input id="changeThreshold" type="range" min="5" max="60" step="1">
+    <p class="hint">
+      วัดเป็น <b>สัดส่วนพื้นที่ที่เปลี่ยน</b> ไม่ใช่ผลต่างของสีรวม ๆ นี่คือเหตุผลที่กล้องวิทยากรขยับไม่ทำให้จับรัว —
+      หน้าคนกินพื้นที่ราว 2–3% ส่วนการเปลี่ยนสไลด์เปลี่ยนราว 95%<br>
+      จับไม่ทันให้ลดลง · จับรัวเกินไปให้เพิ่มขึ้น
+    </p>
+
+    <label for="blockDelta">ความไวต่อความต่างของแต่ละช่อง <b id="blockDeltaLabel">10</b></label>
+    <input id="blockDelta" type="range" min="3" max="40" step="1">
+    <p class="hint">ค่าน้อย = ไวมาก (อาจจับเงาหรือเคอร์เซอร์) · ค่ามาก = ต้องเปลี่ยนชัด ๆ ถึงจะนับ</p>
+
+    <label for="stabilityChecks">รอให้ภาพนิ่ง <b id="stabilityChecksLabel">1</b> รอบก่อนบันทึก</label>
+    <input id="stabilityChecks" type="range" min="0" max="4" step="1">
+    <p class="hint">กันการเก็บภาพตอนสไลด์กำลัง fade หรือ animation ยังไม่จบ · 0 = บันทึกทันทีที่เห็นว่าต่าง</p>
+
+    <label for="slideQuality">คุณภาพภาพ <b id="slideQualityLabel">80</b>%</label>
+    <input id="slideQuality" type="range" min="40" max="95" step="5">
+
+    <label for="maxSlides">เก็บสูงสุด <b id="maxSlidesLabel">300</b> ภาพต่อการประชุม</label>
+    <input id="maxSlides" type="range" min="20" max="1000" step="20">
+  </section>
+
+  <!-- ============================================================ GENERAL -->
+  <section>
+    <h2>ทั่วไป</h2>
 
     <div class="check">
       <input id="keepAwake" type="checkbox">
-      <label for="keepAwake">กันจอหลับระหว่างมอนิเตอร์</label>
+      <label for="keepAwake">กันจอหลับระหว่างทำงาน</label>
     </div>
     <p class="hint">จอหลับ = หน้าประชุมหยุดวาดภาพ = สแกนไปก็เจอแต่เฟรมค้าง</p>
-  </section>
 
-  <section>
-    <h2>ประวัติ</h2>
-    <label for="maxLog">เก็บย้อนหลัง <b id="maxLogLabel">50</b> รายการ</label>
+    <label for="maxLog">เก็บประวัติ QR ย้อนหลัง <b id="maxLogLabel">50</b> รายการ</label>
     <input id="maxLog" type="range" min="10" max="200" step="10">
+
     <div class="row">
-      <button id="clearLog" class="secondary">ล้างประวัติ</button>
+      <button id="openSessions" class="secondary">ดูบันทึกที่เก็บไว้</button>
+      <button id="clearLog" class="secondary">ล้างประวัติ QR</button>
       <button id="clearSeen" class="secondary">ล้างรายการ QR ที่เคยเตือน</button>
       <span id="clearResult" class="muted"></span>
     </div>

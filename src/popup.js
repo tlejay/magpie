@@ -1,29 +1,57 @@
-import { getState, getSettings, getLog } from './shared/storage.js';
+import { getState, getSettings, saveSettings, getLog } from './shared/storage.js';
 
 const el = (id) => document.getElementById(id);
+const TOOLS = ['enableQr', 'enableAudio', 'enableSlides'];
+
 const ui = {
   pill: el('pill'), engine: el('engine'), warn: el('warn'),
-  tabTitle: el('tabTitle'), toggle: el('toggle'), stats: el('stats'),
-  scanCount: el('scanCount'), filteredCount: el('filteredCount'),
-  lastScan: el('lastScan'), uptime: el('uptime'),
-  logList: el('logList'), msg: el('msg'),
+  toolsNote: el('toolsNote'), tabTitle: el('tabTitle'), toggle: el('toggle'),
+  stats: el('stats'), logList: el('logList'), msg: el('msg'),
+  audioPanel: el('audioPanel'), passthrough: el('passthrough'),
+  mTab: el('mTab'), mMic: el('mMic'), micLabel: el('micLabel'),
 };
 
 let currentTab = null;
 let state = null;
+let settings = null;
+let levelTimer = null;
 
 init();
 
 async function init() {
   [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
   ui.toggle.addEventListener('click', onToggle);
+
+  for (const id of TOOLS) {
+    el(id).addEventListener('change', async () => {
+      await saveSettings({ [id]: el(id).checked });
+      await render();
+    });
+  }
+
+  ui.passthrough.addEventListener('change', async () => {
+    const on = ui.passthrough.checked;
+    await saveSettings({ passthrough: on });
+    // Applies to the running pipeline immediately — no restart needed.
+    await send({ type: 'SET_PASSTHROUGH', on }).catch(() => {});
+  });
+
   el('openOptions').addEventListener('click', (e) => {
     e.preventDefault();
     chrome.runtime.openOptionsPage();
   });
+  el('openSessions').addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/sessions.html') });
+  });
   el('openTest').addEventListener('click', (e) => {
     e.preventDefault();
     chrome.tabs.create({ url: chrome.runtime.getURL('test/qr-test.html') });
+  });
+  el('openSlideTest').addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL('test/slide-test.html') });
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -36,50 +64,122 @@ async function init() {
 
 async function render() {
   state = await getState();
-  const settings = await getSettings();
+  settings = await getSettings();
   const log = await getLog();
 
   const monitoring = state.monitoring;
   const sameTab = monitoring && currentTab && state.tabId === currentTab.id;
 
-  ui.pill.textContent = monitoring ? 'กำลังเฝ้าอยู่' : 'หยุดอยู่';
-  ui.pill.className = `pill ${monitoring ? 'on' : 'off'}`;
+  ui.pill.textContent = monitoring ? (state.recording ? 'กำลังอัด' : 'กำลังเฝ้าอยู่') : 'หยุดอยู่';
+  ui.pill.className = `pill ${monitoring ? (state.recording ? 'rec' : 'on') : 'off'}`;
 
   ui.engine.textContent = monitoring
-    ? `${state.engine === 'native' ? 'ตัวอ่านของระบบ' : 'jsQR (สำรอง)'} · ${state.frameW}×${state.frameH} · ทุก ${settings.intervalSec} วิ`
-    : `สแกนทุก ${settings.intervalSec} วินาที`;
+    ? describeRunning()
+    : 'เก็บสิ่งที่การประชุมทิ้งไว้';
 
-  // warnings
-  if (!settings.webhookUrl) {
-    showWarn('ยังไม่ได้ตั้ง Discord webhook — จะเด้งเตือนบนเครื่องอย่างเดียว <a href="#" id="w1">ไปตั้งค่า</a>');
-    el('w1')?.addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
-  } else if (monitoring && !sameTab) {
-    showWarn(`กำลังเฝ้าแท็บอื่นอยู่: <b>${escapeHtml(state.tabTitle || 'ไม่ทราบชื่อ')}</b>`);
-  } else if (state.lastError === 'stalled') {
-    showWarn('มอนิเตอร์ค้าง — ไม่ได้ภาพใหม่มาสักพักแล้ว ลองหยุดแล้วเริ่มใหม่');
-  } else {
-    ui.warn.hidden = true;
+  // Tools cannot be switched mid-session: they change what the capture asks
+  // Chrome for, which is decided once when the stream opens.
+  for (const id of TOOLS) {
+    el(id).checked = !!settings[id];
+    el(id).disabled = monitoring;
   }
+  ui.toolsNote.textContent = monitoring ? 'หยุดก่อนถึงจะเปลี่ยนได้' : '';
+
+  renderWarning(monitoring, sameTab);
 
   ui.tabTitle.textContent = monitoring
     ? (state.tabTitle || 'ไม่ทราบชื่อแท็บ')
     : (currentTab?.title || 'ไม่ทราบชื่อแท็บ');
 
+  const anyTool = TOOLS.some((id) => settings[id]);
   ui.toggle.textContent = monitoring
-    ? (sameTab ? 'หยุดมอนิเตอร์' : 'หยุดมอนิเตอร์แท็บนั้น')
+    ? (sameTab ? 'หยุด' : 'หยุดแท็บนั้น')
     : 'เริ่มมอนิเตอร์แท็บนี้';
   ui.toggle.classList.toggle('stop', monitoring);
-  ui.toggle.disabled = false;
+  ui.toggle.disabled = !monitoring && !anyTool;
 
-  ui.stats.hidden = !monitoring;
-  if (monitoring) {
-    ui.scanCount.textContent = state.scanCount ?? 0;
-    ui.filteredCount.textContent = state.filteredCount ?? 0;
-    ui.lastScan.textContent = state.lastScanAt ? ago(state.lastScanAt) : '—';
-    ui.uptime.textContent = state.startedAt ? duration(Date.now() - state.startedAt) : '—';
-  }
-
+  renderAudio(monitoring);
+  renderStats(monitoring);
   renderLog(log);
+}
+
+function describeRunning() {
+  const on = [];
+  if (state.features?.qr) on.push('QR');
+  if (state.features?.audio) on.push(state.micIncluded ? 'เสียง+ไมค์' : 'เสียง');
+  if (state.features?.slides) on.push('สไลด์');
+  const size = state.frameW ? ` · ${state.frameW}×${state.frameH}` : '';
+  return `${on.join(' · ') || '—'}${size}`;
+}
+
+function renderWarning(monitoring, sameTab) {
+  if (state.audioNotice) {
+    showWarn(escapeHtml(state.audioNotice));
+  } else if (settings.enableQr && !settings.webhookUrl) {
+    showWarn('ยังไม่ได้ตั้ง Discord webhook — จะเด้งเตือนบนเครื่องอย่างเดียว <a href="#" id="w1">ไปตั้งค่า</a>');
+    el('w1')?.addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
+  } else if (monitoring && !sameTab) {
+    showWarn(`กำลังเฝ้าแท็บอื่นอยู่: <b>${escapeHtml(state.tabTitle || 'ไม่ทราบชื่อ')}</b>`);
+  } else if (state.lastError === 'stalled') {
+    showWarn('ค้างอยู่ — ไม่ได้ภาพใหม่มาสักพักแล้ว ลองหยุดแล้วเริ่มใหม่');
+  } else if (!monitoring && !TOOLS.some((id) => settings[id])) {
+    showWarn('เปิดเครื่องมืออย่างน้อยหนึ่งอย่างก่อนถึงจะเริ่มได้');
+  } else {
+    ui.warn.hidden = true;
+  }
+}
+
+function renderAudio(monitoring) {
+  const live = monitoring && state.recording;
+  ui.audioPanel.hidden = !live;
+  clearInterval(levelTimer);
+  levelTimer = null;
+  if (!live) return;
+
+  ui.passthrough.checked = settings.passthrough !== false;
+  ui.micLabel.textContent = state.micIncluded ? 'ไมค์' : 'ไมค์ (ไม่ได้ใช้)';
+
+  levelTimer = setInterval(pollLevels, 250);
+  pollLevels();
+}
+
+async function pollLevels() {
+  const res = await send({ type: 'GET_LEVELS' }).catch(() => null);
+  const levels = res?.levels;
+  setMeter(ui.mTab, levels?.tab);
+  setMeter(ui.mMic, levels?.mic);
+}
+
+function setMeter(node, value) {
+  const pct = Math.round(Math.min(1, value ?? 0) * 100);
+  node.style.width = `${pct}%`;
+  node.classList.toggle('hot', pct > 88);
+}
+
+function renderStats(monitoring) {
+  ui.stats.hidden = !monitoring;
+  if (!monitoring) return;
+
+  const cells = [];
+  if (state.features?.qr) {
+    cells.push(['สแกนแล้ว', state.scanCount ?? 0]);
+    cells.push(['กรองทิ้ง', state.filteredCount ?? 0]);
+  }
+  if (state.features?.slides) cells.push(['สไลด์', state.slideCount ?? 0]);
+  if (state.features?.audio) cells.push(['เสียง', `${state.audioChunks ?? 0} ท่อน`]);
+  cells.push(['เฝ้ามาแล้ว', state.startedAt ? duration(Date.now() - state.startedAt) : '—']);
+  if (state.features?.qr) cells.push(['สแกนล่าสุด', state.lastScanAt ? ago(state.lastScanAt) : '—']);
+
+  ui.stats.replaceChildren();
+  for (const [label, value] of cells) {
+    const div = document.createElement('div');
+    const span = document.createElement('span');
+    span.textContent = String(value);
+    const small = document.createElement('small');
+    small.textContent = label;
+    div.append(span, small);
+    ui.stats.append(div);
+  }
 }
 
 function showWarn(html) {
@@ -131,7 +231,8 @@ function renderLog(log) {
     const meta = document.createElement('div');
     meta.className = 'entry-meta';
     const when = new Date(entry.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-    meta.append(document.createTextNode(`${when} · ${entry.pass === 'full' ? 'เต็มจอ' : entry.pass === 'tiled' ? 'ซูมหา' : entry.pass === 'inverted' ? 'กลับสี' : ''} `));
+    const how = { full: 'เต็มจอ', tiled: 'ซูมหา', inverted: 'กลับสี' }[entry.pass] || '';
+    meta.append(document.createTextNode(`${when}${how ? ` · ${how}` : ''} `));
     if (entry.webhookOk === false) {
       const bad = document.createElement('span');
       bad.className = 'bad';
@@ -153,7 +254,11 @@ async function onToggle() {
   ui.msg.textContent = '';
   try {
     if (state.monitoring) {
-      await send({ type: 'STOP_MONITOR' });
+      const res = await send({ type: 'STOP_MONITOR' });
+      const s = res.summary;
+      if (s?.chunks || s?.slides) {
+        ui.msg.textContent = `บันทึกแล้ว: เสียง ${s.chunks || 0} ท่อน · สไลด์ ${s.slides || 0}`;
+      }
     } else {
       if (!currentTab) throw new Error('หาแท็บปัจจุบันไม่เจอ');
       if (/^(chrome|edge|about|chrome-extension):/.test(currentTab.url || '')) {
@@ -170,7 +275,7 @@ async function onToggle() {
       });
     }
   } catch (err) {
-    ui.msg.textContent = String(err.message || err).slice(0, 80);
+    ui.msg.textContent = String(err.message || err).slice(0, 90);
   }
   await render();
 }

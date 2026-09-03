@@ -2,6 +2,12 @@
 // Used by the service worker, popup, options page and the offscreen document.
 
 export const DEFAULT_SETTINGS = {
+  // --- which tools are armed
+  enableQr: true,
+  enableAudio: false,     // off by default: recording is never a surprise
+  enableSlides: false,
+
+  // --- Watch (QR)
   webhookUrl: '',
   intervalSec: 60,        // how often to grab a frame and look for a QR
   cooldownMin: 30,        // don't re-alert on the same QR within this window
@@ -10,8 +16,29 @@ export const DEFAULT_SETTINGS = {
   soundEnabled: true,
   volume: 0.8,
   attachSnapshot: true,   // send the captured frame along to Discord
-  keepAwake: true,        // stop the display sleeping while monitoring
   maxLog: 50,
+
+  // --- Listen (audio)
+  audioSource: 'tab',     // 'tab' works today; 'native' needs a companion app
+  recordTabAudio: true,
+  recordMic: true,
+  micDeviceId: '',
+  passthrough: true,      // false = record silently, hear nothing
+  outputDeviceId: '',     // '' = system default
+  audioBitrateKbps: 64,
+  chunkSeconds: 5,        // write to IndexedDB this often; never buffer a whole meeting
+
+  // --- Collect (slides)
+  slideIntervalSec: 3,
+  blockDelta: 10,         // 0-255 per-block difference that counts as "changed"
+  changeThreshold: 0.20,  // fraction of the screen that must change to call it a new slide
+  stableThreshold: 0.03,  // "the picture has settled" tolerance
+  stabilityChecks: 1,     // confirming samples before saving
+  slideQuality: 0.8,
+  maxSlides: 300,
+
+  // --- shared
+  keepAwake: true,        // stop the display sleeping while monitoring
 };
 
 export const DEFAULT_STATE = {
@@ -28,6 +55,15 @@ export const DEFAULT_STATE = {
   frameH: 0,
   engine: '',             // 'native' | 'jsqr'
   lastError: '',
+
+  // --- session in progress
+  sessionId: null,
+  features: { qr: false, audio: false, slides: false },
+  recording: false,
+  micIncluded: false,
+  slideCount: 0,
+  audioChunks: 0,
+  audioNotice: '',        // e.g. mic denied — surfaced, never swallowed
 };
 
 export async function getSettings() {
