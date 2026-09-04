@@ -126,6 +126,7 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
     scanCount: 0,
     filteredCount: 0,
     slideCount: 0,
+    slidesUploaded: 0,
     audioChunks: 0,
     frameW: res.frameW || 0,
     frameH: res.frameH || 0,
@@ -221,6 +222,7 @@ async function handleSlideSaved({ slideId, seq, offsetMs, snapshot }) {
   });
 
   if (result.ok) {
+    await setState({ slidesUploaded: (await getState()).slidesUploaded + 1 });
     if (slideId != null) {
       await markSlideUploaded(slideId, result.url).catch(() => {});
       // Only ever drop local bytes after Discord has confirmed it has a copy.

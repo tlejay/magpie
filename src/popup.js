@@ -120,6 +120,11 @@ function renderWarning(monitoring, sameTab) {
     el('w1')?.addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
   } else if (monitoring && !sameTab) {
     showWarn(`กำลังเฝ้าแท็บอื่นอยู่: <b>${escapeHtml(state.tabTitle || 'ไม่ทราบชื่อ')}</b>`);
+  } else if (settings.slidesToDiscord && !settings.webhookUrl) {
+    showWarn('ติ๊ก "ส่งสไลด์เข้า Discord" ไว้ แต่ยังไม่ได้ตั้ง webhook URL');
+  } else if (monitoring && settings.enableSlides && !settings.slidesToDiscord) {
+    showWarn('สไลด์ถูกเก็บลงเครื่องอย่างเดียว — ยังไม่ได้เปิด "ส่งสไลด์เข้า Discord" ใน <a href="#" id="w2">ตั้งค่า</a>');
+    el('w2')?.addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
   } else if (state.lastError === 'stalled') {
     showWarn('ค้างอยู่ — ไม่ได้ภาพใหม่มาสักพักแล้ว ลองหยุดแล้วเริ่มใหม่');
   } else if (!monitoring && !TOOLS.some((id) => settings[id])) {
@@ -165,7 +170,13 @@ function renderStats(monitoring) {
     cells.push(['สแกนแล้ว', state.scanCount ?? 0]);
     cells.push(['กรองทิ้ง', state.filteredCount ?? 0]);
   }
-  if (state.features?.slides) cells.push(['สไลด์', state.slideCount ?? 0]);
+  if (state.features?.slides) {
+    // Showing the upload count next to the capture count turns "nothing arrived
+    // in Discord" from a guess into something you can read off the popup.
+    cells.push(settings.slidesToDiscord
+      ? ['สไลด์ · ส่งแล้ว', `${state.slideCount ?? 0} · ${state.slidesUploaded ?? 0}`]
+      : ['สไลด์', state.slideCount ?? 0]);
+  }
   if (state.features?.audio) cells.push(['เสียง', `${state.audioChunks ?? 0} ท่อน`]);
   cells.push(['เฝ้ามาแล้ว', state.startedAt ? duration(Date.now() - state.startedAt) : '—']);
   if (state.features?.qr) cells.push(['สแกนล่าสุด', state.lastScanAt ? ago(state.lastScanAt) : '—']);

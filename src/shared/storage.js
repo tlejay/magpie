@@ -64,6 +64,7 @@ export const DEFAULT_STATE = {
   recording: false,
   micIncluded: false,
   slideCount: 0,
+  slidesUploaded: 0,      // how many reached Discord — makes a silent failure visible
   audioChunks: 0,
   audioNotice: '',        // e.g. mic denied — surfaced, never swallowed
   slideUploadFailed: false, // so a failing webhook warns once, not once per slide

@@ -39,7 +39,13 @@ let slideSeq = 0;
 let audio = null;
 let audioChunks = 0;
 
+let heartbeatTimer = null;
 let running = false;
+
+// The popup's counters used to ride along on the QR scan's heartbeat, so with
+// QR switched off they sat at zero while audio and slides were working fine.
+// Progress reporting must not depend on which tools happen to be armed.
+const HEARTBEAT_MS = 10_000;
 
 // ---------------------------------------------------------------- messaging
 
@@ -191,6 +197,7 @@ async function start(msg) {
   }
 
   running = true;
+  scheduleHeartbeat();
 
   return {
     sessionId: session.id,
@@ -207,7 +214,8 @@ async function stop() {
   running = false;
   clearTimeout(qrTimer);
   clearTimeout(slideTimer);
-  qrTimer = slideTimer = null;
+  clearTimeout(heartbeatTimer);
+  qrTimer = slideTimer = heartbeatTimer = null;
 
   let summary = null;
   if (audio) {
@@ -244,6 +252,23 @@ function applyConfig(config) {
   settings = { ...settings, ...(config || {}) };
   slideDetector?.configure(settings);
   if (typeof config?.passthrough === 'boolean') audio?.setPassthrough(config.passthrough);
+}
+
+// ---------------------------------------------------------------- heartbeat
+
+function scheduleHeartbeat() {
+  clearTimeout(heartbeatTimer);
+  heartbeatTimer = setTimeout(() => {
+    if (!running) return;
+    report('HEARTBEAT', {
+      scanCount,
+      slideCount: slideSeq,
+      audioChunks,
+      frameW: video.videoWidth,
+      frameH: video.videoHeight,
+    });
+    scheduleHeartbeat();
+  }, HEARTBEAT_MS);
 }
 
 // ---------------------------------------------------------------- QR loop
