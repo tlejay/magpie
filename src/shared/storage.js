@@ -68,6 +68,7 @@ export const DEFAULT_STATE = {
   audioChunks: 0,
   audioNotice: '',        // e.g. mic denied — surfaced, never swallowed
   slideUploadFailed: false, // so a failing webhook warns once, not once per slide
+  slideBlank: false,      // capture went black (Picture-in-Picture is the usual cause)
 };
 
 export async function getSettings() {

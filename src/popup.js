@@ -1,20 +1,15 @@
 import { getState, getSettings, saveSettings, getLog } from './shared/storage.js';
+import { listSessions, getCounts } from './shared/db.js';
+import { buildAudioFiles, buildSessionZip, downloadBlob, formatOffset } from './shared/export.js';
 
 const el = (id) => document.getElementById(id);
 const TOOLS = ['enableQr', 'enableAudio', 'enableSlides'];
-
-const ui = {
-  pill: el('pill'), engine: el('engine'), warn: el('warn'),
-  toolsNote: el('toolsNote'), tabTitle: el('tabTitle'), toggle: el('toggle'),
-  stats: el('stats'), logList: el('logList'), msg: el('msg'),
-  audioPanel: el('audioPanel'), passthrough: el('passthrough'),
-  mTab: el('mTab'), mMic: el('mMic'), micLabel: el('micLabel'),
-};
 
 let currentTab = null;
 let state = null;
 let settings = null;
 let levelTimer = null;
+let lastSession = null; // most recent finished session, for the download block
 
 init();
 
@@ -25,7 +20,7 @@ async function init() {
 
   [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  ui.toggle.addEventListener('click', onToggle);
+  el('toggle').addEventListener('click', onToggle);
 
   for (const id of TOOLS) {
     el(id).addEventListener('change', async () => {
@@ -34,37 +29,46 @@ async function init() {
     });
   }
 
-  ui.passthrough.addEventListener('change', async () => {
-    const on = ui.passthrough.checked;
+  el('passthrough').addEventListener('change', async () => {
+    const on = el('passthrough').checked;
     await saveSettings({ passthrough: on });
     // Applies to the running pipeline immediately — no restart needed.
     await send({ type: 'SET_PASSTHROUGH', on }).catch(() => {});
   });
 
-  el('openOptions').addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.runtime.openOptionsPage();
-  });
-  el('openSessions').addEventListener('click', (e) => {
-    e.preventDefault();
+  el('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  el('openSessions').addEventListener('click', () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/sessions.html') });
   });
-  el('openTest').addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.tabs.create({ url: chrome.runtime.getURL('test/qr-test.html') });
-  });
-  el('openSlideTest').addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.tabs.create({ url: chrome.runtime.getURL('test/slide-test.html') });
-  });
+  el('dlAudio').addEventListener('click', () => downloadLast('audio'));
+  el('dlZip').addEventListener('click', () => downloadLast('zip'));
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes.state || changes.log || changes.settings)) render();
   });
 
+  await refreshLastSession();
   await render();
-  setInterval(render, 5000); // keeps the "x นาทีที่แล้ว" labels honest
+  setInterval(render, 5000); // keeps the elapsed labels honest
 }
+
+/**
+ * Read the newest session straight from IndexedDB rather than only remembering
+ * the one stopped in this popup — closing and reopening it should not lose the
+ * way to get a recording out.
+ */
+async function refreshLastSession() {
+  try {
+    const [newest] = await listSessions();
+    if (!newest) { lastSession = null; return; }
+    const counts = await getCounts(newest.id);
+    lastSession = (counts.chunks || counts.slides) ? { ...newest, counts } : null;
+  } catch {
+    lastSession = null; // a broken read must not take the whole popup down
+  }
+}
+
+// ---------------------------------------------------------------- render
 
 async function render() {
   state = await getState();
@@ -74,145 +78,147 @@ async function render() {
   const monitoring = state.monitoring;
   const sameTab = monitoring && currentTab && state.tabId === currentTab.id;
 
-  ui.pill.textContent = monitoring ? (state.recording ? 'กำลังอัด' : 'กำลังเฝ้าอยู่') : 'หยุดอยู่';
-  ui.pill.className = `pill ${monitoring ? (state.recording ? 'rec' : 'on') : 'off'}`;
+  el('pill').textContent = monitoring ? (state.recording ? 'กำลังอัด' : 'กำลังเฝ้า') : 'หยุดอยู่';
+  el('pill').className = `pill ${monitoring ? (state.recording ? 'rec' : 'on') : 'off'}`;
 
-  ui.engine.textContent = monitoring
-    ? describeRunning()
-    : 'เก็บสิ่งที่การประชุมทิ้งไว้';
-
-  // Tools cannot be switched mid-session: they change what the capture asks
-  // Chrome for, which is decided once when the stream opens.
+  // Tools decide what the capture asks Chrome for, which is fixed when the
+  // stream opens — so they lock while a session is running.
   for (const id of TOOLS) {
     el(id).checked = !!settings[id];
     el(id).disabled = monitoring;
   }
-  ui.toolsNote.textContent = monitoring ? 'หยุดก่อนถึงจะเปลี่ยนได้' : '';
+  el('toolsNote').textContent = 'หยุดก่อนถึงจะเปลี่ยนได้';
+  el('toolsNote').hidden = !monitoring;
 
   renderWarning(monitoring, sameTab);
 
-  ui.tabTitle.textContent = monitoring
+  el('tabTitle').textContent = monitoring
     ? (state.tabTitle || 'ไม่ทราบชื่อแท็บ')
     : (currentTab?.title || 'ไม่ทราบชื่อแท็บ');
 
   const anyTool = TOOLS.some((id) => settings[id]);
-  ui.toggle.textContent = monitoring
+  el('toggle').textContent = monitoring
     ? (sameTab ? 'หยุด' : 'หยุดแท็บนั้น')
     : 'เริ่มมอนิเตอร์แท็บนี้';
-  ui.toggle.classList.toggle('stop', monitoring);
-  ui.toggle.disabled = !monitoring && !anyTool;
+  el('toggle').classList.toggle('stop', monitoring);
+  el('toggle').disabled = !monitoring && !anyTool;
 
-  renderAudio(monitoring);
-  renderStats(monitoring);
-  renderLog(log);
-}
-
-function describeRunning() {
-  const on = [];
-  if (state.features?.qr) on.push('QR');
-  if (state.features?.audio) on.push(state.micIncluded ? 'เสียง+ไมค์' : 'เสียง');
-  if (state.features?.slides) on.push('สไลด์');
-  const size = state.frameW ? ` · ${state.frameW}×${state.frameH}` : '';
-  return `${on.join(' · ') || '—'}${size}`;
+  renderLive(monitoring);
+  renderDone(monitoring);
+  renderLog(log, monitoring);
 }
 
 function renderWarning(monitoring, sameTab) {
-  if (state.audioNotice) {
-    showWarn(escapeHtml(state.audioNotice));
-  } else if (settings.enableQr && !settings.webhookUrl) {
-    showWarn('ยังไม่ได้ตั้ง Discord webhook — จะเด้งเตือนบนเครื่องอย่างเดียว <a href="#" id="w1">ไปตั้งค่า</a>');
-    el('w1')?.addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
-  } else if (monitoring && !sameTab) {
-    showWarn(`กำลังเฝ้าแท็บอื่นอยู่: <b>${escapeHtml(state.tabTitle || 'ไม่ทราบชื่อ')}</b>`);
+  const warn = el('warn');
+  const show = (html) => { warn.innerHTML = html; warn.hidden = false; };
+
+  // Ordered by urgency: something actively going wrong beats a setup reminder.
+  if (state.slideBlank) {
+    show('ภาพจากแท็บเป็นสีดำ — <b>ปิด Picture-in-Picture</b> แล้วภาพจะกลับมา '
+      + 'ระหว่างนี้ไม่บันทึกสไลด์');
+  } else if (state.audioNotice) {
+    show(escapeHtml(state.audioNotice));
   } else if (settings.slidesToDiscord && !settings.webhookUrl) {
-    showWarn('ติ๊ก "ส่งสไลด์เข้า Discord" ไว้ แต่ยังไม่ได้ตั้ง webhook URL');
-  } else if (monitoring && settings.enableSlides && !settings.slidesToDiscord) {
-    showWarn('สไลด์ถูกเก็บลงเครื่องอย่างเดียว — ยังไม่ได้เปิด "ส่งสไลด์เข้า Discord" ใน <a href="#" id="w2">ตั้งค่า</a>');
-    el('w2')?.addEventListener('click', (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
+    show('เปิดส่งสไลด์เข้า Discord ไว้ แต่ยังไม่ได้ตั้ง webhook URL');
+  } else if (settings.enableQr && !settings.webhookUrl) {
+    show('ยังไม่ได้ตั้ง Discord webhook — จะเตือนบนเครื่องอย่างเดียว');
+  } else if (monitoring && !sameTab) {
+    show(`กำลังเฝ้าแท็บอื่นอยู่: <b>${escapeHtml(state.tabTitle || 'ไม่ทราบชื่อ')}</b>`);
   } else if (state.lastError === 'stalled') {
-    showWarn('ค้างอยู่ — ไม่ได้ภาพใหม่มาสักพักแล้ว ลองหยุดแล้วเริ่มใหม่');
+    show('ค้างอยู่ — ไม่ได้ภาพใหม่มาสักพัก ลองหยุดแล้วเริ่มใหม่');
   } else if (!monitoring && !TOOLS.some((id) => settings[id])) {
-    showWarn('เปิดเครื่องมืออย่างน้อยหนึ่งอย่างก่อนถึงจะเริ่มได้');
+    show('เปิดเครื่องมืออย่างน้อยหนึ่งอย่างก่อนถึงจะเริ่มได้');
   } else {
-    ui.warn.hidden = true;
+    warn.hidden = true;
   }
 }
 
-function renderAudio(monitoring) {
-  const live = monitoring && state.recording;
-  ui.audioPanel.hidden = !live;
+function renderLive(monitoring) {
+  el('live').hidden = !monitoring;
   clearInterval(levelTimer);
   levelTimer = null;
-  if (!live) return;
+  if (!monitoring) return;
 
-  ui.passthrough.checked = settings.passthrough !== false;
-  ui.micLabel.textContent = state.micIncluded ? 'ไมค์' : 'ไมค์ (ไม่ได้ใช้)';
+  // Inline metrics, not a grid of number cards — this is a status line, and a
+  // status line should read as one sentence.
+  const chips = [];
+  if (state.startedAt) chips.push([formatOffset(Date.now() - state.startedAt), 'เฝ้ามาแล้ว']);
+  if (state.features?.qr) {
+    chips.push([state.scanCount ?? 0, 'สแกน']);
+    if (state.filteredCount) chips.push([state.filteredCount, 'กรองทิ้ง']);
+  }
+  if (state.features?.slides) {
+    chips.push([state.slideCount ?? 0, 'สไลด์']);
+    if (settings.slidesToDiscord) chips.push([state.slidesUploaded ?? 0, 'ส่งแล้ว']);
+  }
+  if (state.features?.audio) chips.push([state.audioChunks ?? 0, 'ท่อนเสียง']);
 
+  el('metrics').replaceChildren(...chips.map(([value, label]) => {
+    const span = document.createElement('span');
+    const b = document.createElement('b');
+    b.textContent = String(value);
+    span.append(b, document.createTextNode(label));
+    return span;
+  }));
+
+  const recording = !!state.recording;
+  el('audioPanel').hidden = !recording;
+  if (!recording) return;
+
+  el('passthrough').checked = settings.passthrough !== false;
+  el('micLabel').textContent = state.micIncluded ? 'ไมค์' : 'ไมค์ (ไม่ได้ใช้)';
   levelTimer = setInterval(pollLevels, 250);
   pollLevels();
 }
 
 async function pollLevels() {
   const res = await send({ type: 'GET_LEVELS' }).catch(() => null);
-  const levels = res?.levels;
-  setMeter(ui.mTab, levels?.tab);
-  setMeter(ui.mMic, levels?.mic);
+  setMeter(el('mTab'), res?.levels?.tab);
+  setMeter(el('mMic'), res?.levels?.mic);
 }
 
 function setMeter(node, value) {
-  const pct = Math.round(Math.min(1, value ?? 0) * 100);
-  node.style.width = `${pct}%`;
-  node.classList.toggle('hot', pct > 88);
+  const level = Math.min(1, value ?? 0);
+  node.style.transform = `scaleX(${level.toFixed(3)})`;
+  node.classList.toggle('hot', level > 0.88);
 }
 
-function renderStats(monitoring) {
-  ui.stats.hidden = !monitoring;
-  if (!monitoring) return;
+function renderDone(monitoring) {
+  const show = !monitoring && !!lastSession;
+  el('lastSession').hidden = !show;
+  if (!show) return;
 
-  const cells = [];
-  if (state.features?.qr) {
-    cells.push(['สแกนแล้ว', state.scanCount ?? 0]);
-    cells.push(['กรองทิ้ง', state.filteredCount ?? 0]);
-  }
-  if (state.features?.slides) {
-    // Showing the upload count next to the capture count turns "nothing arrived
-    // in Discord" from a guess into something you can read off the popup.
-    cells.push(settings.slidesToDiscord
-      ? ['สไลด์ · ส่งแล้ว', `${state.slideCount ?? 0} · ${state.slidesUploaded ?? 0}`]
-      : ['สไลด์', state.slideCount ?? 0]);
-  }
-  if (state.features?.audio) cells.push(['เสียง', `${state.audioChunks ?? 0} ท่อน`]);
-  cells.push(['เฝ้ามาแล้ว', state.startedAt ? duration(Date.now() - state.startedAt) : '—']);
-  if (state.features?.qr) cells.push(['สแกนล่าสุด', state.lastScanAt ? ago(state.lastScanAt) : '—']);
+  const c = lastSession.counts;
+  const dur = (lastSession.endedAt || Date.now()) - lastSession.startedAt;
+  const parts = [];
+  if (c.chunks) parts.push(`🔊 เสียง ${formatOffset(dur)}`);
+  if (c.slides) parts.push(`🖼 สไลด์ ${c.slides} ภาพ`);
+  if (c.qrHits) parts.push(`🔗 QR ${c.qrHits}`);
 
-  ui.stats.replaceChildren();
-  for (const [label, value] of cells) {
-    const div = document.createElement('div');
-    const span = document.createElement('span');
-    span.textContent = String(value);
-    const small = document.createElement('small');
-    small.textContent = label;
-    div.append(span, small);
-    ui.stats.append(div);
-  }
+  el('doneSummary').textContent = parts.join('  ·  ') || 'ไม่มีข้อมูล';
+  el('doneWhen').textContent = lastSession.tabTitle ? ` · ${trim(lastSession.tabTitle, 22)}` : '';
+  el('dlAudio').disabled = !c.chunks;
+  el('dlZip').disabled = !(c.chunks || c.slides || c.qrHits);
 }
 
-function showWarn(html) {
-  ui.warn.innerHTML = html;
-  ui.warn.hidden = false;
-}
+function renderLog(log, monitoring) {
+  // The QR history is noise when QR is not the tool in use.
+  const show = settings.enableQr && (log.length || monitoring);
+  el('logSection').hidden = !show;
+  if (!show) return;
 
-function renderLog(log) {
-  ui.logList.replaceChildren();
+  const list = el('logList');
+  list.replaceChildren();
+
   if (!log.length) {
     const li = document.createElement('li');
     li.className = 'empty';
     li.textContent = 'ยังไม่เจอ QR';
-    ui.logList.append(li);
+    list.append(li);
     return;
   }
 
-  for (const entry of log.slice(0, 12)) {
+  for (const entry of log.slice(0, 10)) {
     const li = document.createElement('li');
 
     if (entry.thumb) {
@@ -260,20 +266,21 @@ function renderLog(log) {
     body.append(meta);
 
     li.append(body);
-    ui.logList.append(li);
+    list.append(li);
   }
 }
 
+// ---------------------------------------------------------------- actions
+
 async function onToggle() {
-  ui.toggle.disabled = true;
-  ui.msg.textContent = '';
+  el('toggle').disabled = true;
+  el('msg').textContent = '';
   try {
     if (state.monitoring) {
-      const res = await send({ type: 'STOP_MONITOR' });
-      const s = res.summary;
-      if (s?.chunks || s?.slides) {
-        ui.msg.textContent = `บันทึกแล้ว: เสียง ${s.chunks || 0} ท่อน · สไลด์ ${s.slides || 0}`;
-      }
+      await send({ type: 'STOP_MONITOR' });
+      // This block is the answer to "where did the audio go" — fill it in the
+      // instant the user stops, not on the next popup open.
+      await refreshLastSession();
     } else {
       if (!currentTab) throw new Error('หาแท็บปัจจุบันไม่เจอ');
       if (/^(chrome|edge|about|chrome-extension):/.test(currentTab.url || '')) {
@@ -290,9 +297,53 @@ async function onToggle() {
       });
     }
   } catch (err) {
-    ui.msg.textContent = String(err.message || err).slice(0, 90);
+    el('msg').textContent = String(err.message || err).slice(0, 70);
   }
   await render();
+}
+
+async function downloadLast(kind) {
+  if (!lastSession) return;
+  [el('dlAudio'), el('dlZip')].forEach((b) => { b.disabled = true; });
+  el('doneBar').hidden = false;
+  setProgress(0.1);
+  setStatus('กำลังเตรียมไฟล์…', null);
+
+  try {
+    if (kind === 'audio') {
+      const files = await buildAudioFiles(lastSession.id);
+      if (!files.length) throw new Error('ไม่มีไฟล์เสียงใน session นี้');
+      setProgress(0.8);
+      for (const f of files) downloadBlob(f.blob, f.filename);
+      const total = files.reduce((n, f) => n + f.blob.size, 0);
+      setStatus(`✅ ดาวน์โหลด ${files.length} ไฟล์ · ${mb(total)}`, true);
+    } else {
+      const { blob, filename, stats } = await buildSessionZip(lastSession.id, (step, pct) => {
+        setStatus(step, null);
+        setProgress(pct);
+      });
+      downloadBlob(blob, filename);
+      setStatus(`✅ ${filename} · ${mb(stats.zipBytes)}`, true);
+    }
+  } catch (err) {
+    setStatus(`❌ ${String(err?.message || err).slice(0, 80)}`, false);
+  }
+
+  el('doneBar').hidden = true;
+  setProgress(0);
+  renderDone(false);
+}
+
+// ---------------------------------------------------------------- helpers
+
+function setProgress(fraction) {
+  el('doneFill').style.transform = `scaleX(${Math.max(0, Math.min(1, fraction)).toFixed(3)})`;
+}
+
+function setStatus(text, ok) {
+  const node = el('doneStatus');
+  node.textContent = text;
+  node.className = ok === null ? 'note' : ok ? 'note ok' : 'note bad';
 }
 
 function send(msg) {
@@ -312,17 +363,13 @@ function getStreamId(tabId) {
   });
 }
 
-function ago(ts) {
-  const s = Math.round((Date.now() - ts) / 1000);
-  if (s < 60) return `${s} วิ`;
-  if (s < 3600) return `${Math.round(s / 60)} นาที`;
-  return `${Math.round(s / 3600)} ชม.`;
+function mb(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function duration(ms) {
-  const m = Math.floor(ms / 60000);
-  if (m < 60) return `${m} นาที`;
-  return `${Math.floor(m / 60)} ชม. ${m % 60} น.`;
+function trim(s, n) {
+  return s.length > n ? `${s.slice(0, n)}…` : s;
 }
 
 function escapeHtml(s) {

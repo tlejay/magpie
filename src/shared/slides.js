@@ -17,6 +17,14 @@ const COLS = 16;
 const ROWS = 9;
 const BLOCKS = COLS * ROWS;
 
+// Picture-in-Picture empties the tab's <video>, so tabCapture hands back a black
+// frame while the content plays in a floating window. Black reads as a ~100%
+// change against the previous slide, which is how a blank image ended up being
+// captured and uploaded in a real meeting. A frame this dark carries no
+// information, so it is never a slide.
+const DARK_LUMA = 16;      // 0-255: below this a block is "black"
+const BLANK_RATIO = 0.9;   // this much of the screen black = nothing to capture
+
 export const SLIDE_DEFAULTS = {
   slideIntervalSec: 3,      // how often to look
   blockDelta: 10,           // 0-255: how different one block must be to count as changed
@@ -73,6 +81,15 @@ export function createSlideDetector(options = {}) {
     return sums;
   }
 
+  /** Fraction of the frame that is essentially black. */
+  function darkness(sig) {
+    let dark = 0;
+    for (let i = 0; i < BLOCKS; i++) {
+      if (sig[i] < DARK_LUMA) dark += 1;
+    }
+    return dark / BLOCKS;
+  }
+
   function ratio(a, b) {
     if (!a || !b) return 1;
     let changed = 0;
@@ -84,10 +101,16 @@ export function createSlideDetector(options = {}) {
 
   /**
    * @returns {{save: boolean, ratio: number, phase: string}}
-   *   phase: 'first' | 'idle' | 'candidate' | 'settling' | 'save'
+   *   phase: 'blank' | 'first' | 'idle' | 'candidate' | 'settling' | 'save'
    */
   function check(source, roi = null) {
     const sig = signature(source, roi);
+
+    // Bail before touching any state: a blank frame must not become the new
+    // reference either, or the real slide would look unchanged when it returns.
+    if (darkness(sig) >= BLANK_RATIO) {
+      return { save: false, ratio: 0, phase: 'blank' };
+    }
 
     // Nothing saved yet — take the screen as it is, right now.
     //

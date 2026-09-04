@@ -74,6 +74,12 @@ async function init() {
     e.preventDefault();
     chrome.tabs.create({ url: chrome.runtime.getURL('src/permission.html') });
   });
+  el('openQrTest').addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('test/qr-test.html') });
+  });
+  el('openSlideTest').addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('test/slide-test.html') });
+  });
   el('openSessions').addEventListener('click', () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/sessions.html') });
   });

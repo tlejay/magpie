@@ -66,6 +66,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     STOP_MONITOR: () => stopMonitor('user'),
     QR_FOUND: () => handleQrFound(msg),
     SLIDE_SAVED: () => handleSlideSaved(msg),
+    SLIDE_BLANK: () => handleSlideBlank(),
     AUDIO_NOTICE: () => handleAudioNotice(msg),
     HEARTBEAT: () => handleHeartbeat(msg),
     CAPTURE_ENDED: () => handleCaptureLost(msg.reason || 'สัญญาณถูกตัด'),
@@ -136,6 +137,7 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
     recording: !!res.recording,
     micIncluded: !!res.micIncluded,
     audioNotice: '',
+    slideBlank: false,
     lastError: '',
   });
 
@@ -207,6 +209,19 @@ async function handleHeartbeat({ scanCount, slideCount, audioChunks, frameW, fra
     frameW: frameW || state.frameW,
     frameH: frameH || state.frameH,
   });
+}
+
+/** The capture went black — tell the user what to actually do about it. */
+async function handleSlideBlank() {
+  const state = await getState();
+  if (!state.monitoring || state.slideBlank) return;
+  await setState({ slideBlank: true });
+  await notifyPlain(
+    'ภาพจากแท็บเป็นสีดำ',
+    'มักเกิดจากการเปิด Picture-in-Picture — ภาพย้ายไปหน้าต่างลอย แท็บเลยว่างเปล่า\n'
+    + 'ปิด PiP แล้วภาพจะกลับมาเอง · ระหว่างนี้ไม่มีการบันทึกสไลด์'
+  );
+  return { warned: true };
 }
 
 async function handleSlideSaved({ slideId, seq, offsetMs, snapshot }) {

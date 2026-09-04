@@ -81,7 +81,7 @@ async function card(session) {
     try {
       const { blob, filename, stats } = await buildSessionZip(session.id, (step, pct) => {
         status.textContent = step;
-        fill.style.width = `${Math.round(pct * 100)}%`;
+        fill.style.transform = `scaleX(${Math.max(0, Math.min(1, pct)).toFixed(3)})`;
       });
       downloadBlob(blob, filename);
       status.textContent =

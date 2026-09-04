@@ -6,70 +6,98 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <img src="../assets/icon48.png" alt="">
-      <div>
-        <h1>Magpie <span id="version" class="ver"></span></h1>
-        <p id="engine" class="muted">—</p>
-      </div>
+  <header class="top">
+    <img class="mark" src="../assets/icon48.png" alt="">
+    <div class="ident">
+      <h1>Magpie</h1>
+      <p id="version" class="ver"></p>
     </div>
     <span id="pill" class="pill off">หยุดอยู่</span>
   </header>
 
-  <section id="warn" class="warn" hidden></section>
+  <p id="warn" class="warn" hidden></p>
 
-  <section class="tools">
-    <p class="label">เครื่องมือ <span id="toolsNote" class="muted"></span></p>
+  <!-- The one decision on this screen: what should it watch. -->
+  <section class="tools" aria-label="เครื่องมือ">
     <label class="tool" for="enableQr">
-      <input id="enableQr" type="checkbox">
-      <span class="tool-icon">👁</span>
-      <span class="tool-text"><b>เฝ้าหา QR</b><small>เจอแล้วเตือน + ส่งเข้า Discord</small></span>
+      <span class="tool-text">
+        <b>เฝ้าหา QR</b>
+        <small>เตือน + ส่งลิงก์เข้า Discord</small>
+      </span>
+      <input id="enableQr" type="checkbox" class="sr">
+      <span class="switch" aria-hidden="true"></span>
     </label>
     <label class="tool" for="enableAudio">
-      <input id="enableAudio" type="checkbox">
-      <span class="tool-icon">🔊</span>
-      <span class="tool-text"><b>อัดเสียง</b><small>เสียงยังออกลำโพงปกติ</small></span>
+      <span class="tool-text">
+        <b>อัดเสียง</b>
+        <small>เสียงยังออกลำโพงปกติ</small>
+      </span>
+      <input id="enableAudio" type="checkbox" class="sr">
+      <span class="switch" aria-hidden="true"></span>
     </label>
     <label class="tool" for="enableSlides">
-      <input id="enableSlides" type="checkbox">
-      <span class="tool-icon">🖼</span>
-      <span class="tool-text"><b>จับภาพสไลด์</b><small>บันทึกเมื่อสไลด์เปลี่ยน</small></span>
+      <span class="tool-text">
+        <b>จับภาพสไลด์</b>
+        <small>บันทึกเมื่อสไลด์เปลี่ยน</small>
+      </span>
+      <input id="enableSlides" type="checkbox" class="sr">
+      <span class="switch" aria-hidden="true"></span>
     </label>
+    <p id="toolsNote" class="note" hidden></p>
   </section>
 
-  <section class="target">
-    <p class="label">แท็บเป้าหมาย</p>
-    <p id="tabTitle" class="tab-title">กำลังอ่าน…</p>
-  </section>
+  <p class="target">
+    <span class="target-eyebrow">แท็บ</span>
+    <span id="tabTitle" class="target-name">กำลังอ่าน…</span>
+  </p>
 
-  <button id="toggle" class="primary">เริ่มมอนิเตอร์แท็บนี้</button>
+  <button id="toggle" class="btn btn-primary">เริ่มมอนิเตอร์แท็บนี้</button>
 
-  <section id="audioPanel" class="audio" hidden>
-    <div class="check">
-      <input id="passthrough" type="checkbox">
-      <label for="passthrough">ส่งเสียงออกลำโพงจริง</label>
+  <!-- Only while running: proof that it is actually working. -->
+  <section id="live" class="live" hidden>
+    <p id="metrics" class="metrics"></p>
+
+    <div id="audioPanel" class="meters" hidden>
+      <label class="mini-toggle" for="passthrough">
+        <input id="passthrough" type="checkbox" class="sr">
+        <span class="switch sm" aria-hidden="true"></span>
+        <span>ส่งเสียงออกลำโพงจริง</span>
+      </label>
+      <div class="meter-row">
+        <small>แท็บ</small>
+        <span class="meter"><i id="mTab"></i></span>
+      </div>
+      <div class="meter-row">
+        <small id="micLabel">ไมค์</small>
+        <span class="meter"><i id="mMic"></i></span>
+      </div>
     </div>
-    <div class="meters">
-      <div><small>แท็บ</small><div class="meter"><i id="mTab"></i></div></div>
-      <div><small id="micLabel">ไมค์</small><div class="meter"><i id="mMic"></i></div></div>
-    </div>
   </section>
 
-  <section id="stats" class="stats" hidden></section>
+  <!-- Only when stopped: the answer to "where did my recording go". -->
+  <section id="lastSession" class="block" hidden>
+    <p class="sec-head">บันทึกล่าสุด<span id="doneWhen" class="sec-sub"></span></p>
+    <p id="doneSummary" class="block-line"></p>
+    <div class="btn-row">
+      <button id="dlAudio" class="btn btn-ghost">⬇&nbsp; เสียง</button>
+      <button id="dlZip" class="btn btn-ghost">⬇&nbsp; ZIP ทั้งชุด</button>
+      <button id="openSessions" class="btn btn-ghost">ทั้งหมด</button>
+    </div>
+    <div id="doneBar" class="bar" hidden><i id="doneFill"></i></div>
+    <p id="doneStatus" class="note"></p>
+  </section>
 
-  <section class="log">
-    <p class="label">ประวัติที่เจอ <a id="openSessions" href="#">บันทึกที่เก็บไว้</a></p>
-    <ul id="logList"><li class="empty">ยังไม่เจอ QR</li></ul>
+  <section id="logSection" class="block" hidden>
+    <p class="sec-head">QR ที่เจอ</p>
+    <ul id="logList"></ul>
   </section>
 
   <footer>
-    <a id="openTest" href="#">ทดสอบ QR</a>
-    <a id="openSlideTest" href="#">ทดสอบสไลด์</a>
-    <a id="openOptions" href="#">ตั้งค่า</a>
-    <span id="msg" class="muted"></span>
+    <button id="openOptions" class="btn btn-ghost">⚙&nbsp; ตั้งค่า</button>
+    <span id="msg" class="note"></span>
   </footer>
 
+  <script src="../lib/fflate.min.js"></script>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

@@ -1,6 +1,8 @@
 :root {
-  --bg: #16171a; --panel: #1e2024; --line: #2c2f35;
-  --text: #e9eaec; --muted: #8b9099; --accent: #f59e0b; --green: #1db954; --red: #ff3b30;
+  --bg: #141517; --panel: #1c1e21; --line: #2a2d32;
+  --text: #eceef0; --muted: #8b9099;
+  --accent: #f59e0b; --accent-ink: #221802;
+  --green: #22c55e; --red: #ef4444;
 }
 * { box-sizing: border-box; }
 body {
@@ -14,6 +16,20 @@ body {
    after stopping. Restore it once, for every element. */
 [hidden] { display: none !important; }
 main { max-width: 620px; margin: 0 auto; }
+
+.navbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin: 0 -20px 18px; padding: 12px 20px;
+  background: rgba(20,21,23,.92); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.navbar a {
+  font-size: 12px; font-weight: 600; padding: 6px 11px; border-radius: 8px;
+  background: #24272b; border: 1px solid var(--line); color: var(--text);
+}
+.navbar a:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+section { scroll-margin-top: 68px; }
 header { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
 header img { width: 52px; height: 52px; border-radius: 12px; }
 h1 { margin: 0; font-size: 19px; }
@@ -51,10 +67,13 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
 
 .row { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 button {
-  font: inherit; font-size: 13px; cursor: pointer; border-radius: 8px;
-  border: 1px solid var(--line); background: #26282d; color: var(--text); padding: 8px 14px;
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  border-radius: 9px; border: 1px solid var(--line);
+  background: #24272b; color: var(--text); padding: 8px 14px;
+  transition: border-color .12s, color .12s;
 }
-button:hover { background: #2f3237; }
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button.tiny { padding: 3px 10px; font-size: 12px; }
 .ok  { color: var(--green); }
 .bad { color: var(--red); }

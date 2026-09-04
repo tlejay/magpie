@@ -281,6 +281,7 @@ QR         forms.gle → alerts · lin.ee → filtered, and the counter goes up
 - **Meetings must run in a Chrome tab.** Desktop Zoom/Teams are invisible to an extension; supporting them would need a native macOS audio driver, which is a separate project.
 - Very small or heavily compressed QR codes are unrecoverable — see the benchmark.
 - Slide thresholds may need tuning for unusual layouts; every value is exposed.
+- **Picture-in-Picture blanks the capture.** Popping the video out moves it to a floating window and leaves the tab empty, so the capture goes black. Found the hard way, in a real meeting, after a solid black slide had already been uploaded. Frames that dark are now detected and never saved, and the popup says why — but nothing is captured until PiP is closed.
 - DRM-protected video (Netflix and friends) captures as black frames. Untested.
 - Restarting Chrome ends the session. Deliberate: nothing should be capturing your screen silently.
 

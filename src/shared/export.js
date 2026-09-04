@@ -43,6 +43,36 @@ function audioExtension(mimeType) {
 }
 
 /**
+ * Just the audio, no ZIP. Getting the recording out is the most common thing
+ * anyone wants right after stopping, and making them build a whole archive for
+ * it is friction for no reason.
+ *
+ * @returns {Promise<Array<{blob: Blob, filename: string, track: string}>>}
+ */
+export async function buildAudioFiles(sessionId) {
+  const { session, chunks } = await getSessionBundle(sessionId);
+  if (!session) throw new Error('ไม่พบ session นี้');
+  if (!chunks.length) return [];
+
+  const ext = audioExtension(session.audioMimeType);
+  const type = session.audioMimeType || 'audio/webm';
+  const base = sessionFolderName(session);
+
+  const byTrack = new Map();
+  for (const c of chunks) {
+    const track = c.track || 'mix';
+    if (!byTrack.has(track)) byTrack.set(track, []);
+    byTrack.get(track).push(c);
+  }
+
+  return [...byTrack].map(([track, list]) => ({
+    track,
+    blob: new Blob(list.map((c) => c.blob), { type }),
+    filename: track === 'mix' ? `${base}.${ext}` : `${base}-${track}.${ext}`,
+  }));
+}
+
+/**
  * @param {string} sessionId
  * @param {(step: string, pct: number) => void} [onProgress]
  * @returns {Promise<{blob: Blob, filename: string, stats: object}>}

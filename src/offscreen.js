@@ -35,6 +35,7 @@ let saveCanvas = null;
 let saveCtx = null;
 let slideTimer = null;
 let slideSeq = 0;
+let blankWarned = false;
 
 let audio = null;
 let audioChunks = 0;
@@ -196,6 +197,7 @@ async function start(msg) {
     });
   }
 
+  blankWarned = false;
   running = true;
   scheduleHeartbeat();
 
@@ -344,6 +346,17 @@ async function checkSlide() {
   if (slideSeq >= (settings.maxSlides || 300)) return;
 
   const result = slideDetector.check(video);
+
+  // A black frame means the tab stopped rendering — almost always because the
+  // video was popped out into Picture-in-Picture. Say so once; silently
+  // capturing nothing is how black slides reached Discord in a real meeting.
+  if (result.phase === 'blank') {
+    if (!blankWarned) {
+      blankWarned = true;
+      report('SLIDE_BLANK', {});
+    }
+    return;
+  }
   if (!result.save) return;
 
   if (!saveCanvas || saveCanvas.width !== w || saveCanvas.height !== h) {

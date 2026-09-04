@@ -11,21 +11,30 @@
     <img src="../assets/icon128.png" alt="">
     <div>
       <h1>Magpie</h1>
-      <p class="muted">เก็บสิ่งที่การประชุมทิ้งไว้ — QR Code, เสียง, สไลด์</p>
+      <p class="muted">เก็บสิ่งที่การประชุมทิ้งไว้: QR Code, เสียง, สไลด์</p>
       <p id="version" class="muted"></p>
     </div>
   </header>
 
+  <nav class="navbar">
+    <a href="#s-discord">Discord</a>
+    <a href="#s-qr">👁 QR</a>
+    <a href="#s-audio">🔊 เสียง</a>
+    <a href="#s-slides">🖼 สไลด์</a>
+    <a href="#s-general">ทั่วไป</a>
+    <a href="#s-test">ทดสอบ</a>
+  </nav>
+
   <p id="engineNote" class="note">กำลังตรวจตัวอ่าน QR…</p>
 
   <!-- ============================================================ Discord -->
-  <section>
+  <section id="s-discord">
     <h2>Discord</h2>
     <label for="webhookUrl">Webhook URL</label>
     <input id="webhookUrl" type="url" placeholder="https://discord.com/api/webhooks/…" spellcheck="false">
     <p class="hint">
       สร้างที่ Discord: <b>Server Settings → Integrations → Webhooks → New Webhook</b> แล้วกด Copy Webhook URL<br>
-      URL นี้เป็นความลับ ใครถือก็โพสต์เข้า channel นี้ได้ — อย่าเอาไปแปะที่สาธารณะ
+      URL นี้เป็นความลับ ใครถือก็โพสต์เข้า channel นี้ได้ อย่าเอาไปแปะที่สาธารณะ
     </p>
     <div class="row">
       <button id="testWebhook" class="secondary">ทดสอบส่งเข้า Discord</button>
@@ -34,7 +43,7 @@
   </section>
 
   <!-- ================================================================= QR -->
-  <section>
+  <section id="s-qr">
     <h2>👁 เฝ้าหา QR</h2>
 
     <label for="intervalSec">สแกนทุก <b id="intervalSecLabel">60</b> วินาที</label>
@@ -51,7 +60,7 @@
     <label for="urlBlocklist">ไม่ต้องเตือนถ้ามีคำเหล่านี้ (คั่นด้วยจุลภาค)</label>
     <input id="urlBlocklist" type="text" placeholder="เว้นว่าง = ไม่กรองอะไรทิ้ง" spellcheck="false">
     <p class="hint">
-      ตัวนี้ชนะทุกอย่าง — เข้าเงื่อนไขเมื่อไหร่คือทิ้งทันที<br>
+      ตัวนี้ชนะทุกอย่าง เข้าเงื่อนไขเมื่อไหร่คือทิ้งทันที<br>
       ค่าเริ่มต้น <code>line.naver.jp</code> กับ <code>lin.ee</code> มาจากเคสจริง:
       วิทยากรมักมี QR เพิ่มเพื่อน LINE อยู่บนสไลด์แนะนำตัว ซึ่งไม่ใช่ QR ที่เรารอ · ลบออกได้
     </p>
@@ -77,7 +86,7 @@
   </section>
 
   <!-- ============================================================== AUDIO -->
-  <section>
+  <section id="s-audio">
     <h2>🔊 อัดเสียง</h2>
 
     <p class="hint">
@@ -91,7 +100,7 @@
     </div>
     <p class="hint">
       ⚠️ การอัดเสียงจากแท็บทำให้ Chrome ปิดเสียงแท็บนั้น ตัวเลือกนี้คือการต่อเสียงกลับออกลำโพงให้
-      <b>ปิดเมื่อไหร่คือจะไม่ได้ยินเสียงประชุมเลย</b> (แต่ยังอัดอยู่) — ปิดต่อเมื่อฟังจากอุปกรณ์อื่นอยู่แล้ว
+      <b>ปิดเมื่อไหร่คือจะไม่ได้ยินเสียงประชุมเลย</b> (แต่ยังอัดอยู่) ปิดต่อเมื่อฟังจากอุปกรณ์อื่นอยู่แล้ว
     </p>
 
     <label for="outputDeviceId">ลำโพงที่จะให้เสียงออก</label>
@@ -108,13 +117,13 @@
     </div>
     <p class="hint">
       จะได้ได้ยินบทสนทนาครบทั้งสองฝั่ง (รวมไฟล์เดียวหรือแยกไฟล์ก็ได้ ดูหัวข้อถัดไป)<br>
-      ต้องกดอนุญาตไมโครโฟนก่อนหนึ่งครั้ง — <a id="openPermission" href="#">เปิดหน้าอนุญาต</a>
+      ต้องกดอนุญาตไมโครโฟนก่อนหนึ่งครั้ง: <a id="openPermission" href="#">เปิดหน้าอนุญาต</a>
     </p>
 
     <label for="audioLayout">รูปแบบไฟล์เสียง</label>
     <select id="audioLayout">
-      <option value="mixed">ไฟล์เดียว — รวมเสียงแท็บกับไมค์เข้าด้วยกัน</option>
-      <option value="separate">แยกไฟล์ — เสียงแท็บกับไมค์คนละไฟล์</option>
+      <option value="mixed">ไฟล์เดียว · รวมเสียงแท็บกับไมค์เข้าด้วยกัน</option>
+      <option value="separate">แยกไฟล์ · เสียงแท็บกับไมค์คนละไฟล์</option>
     </select>
     <p class="hint">
       แยกไฟล์มีประโยชน์ตอนอยากตัดต่อหรือถอดเสียงทีละฝั่ง เช่นถอดเฉพาะเสียงวิทยากรโดยไม่มีเสียงเราปน
@@ -124,9 +133,9 @@
 
     <label for="audioBitrateKbps">คุณภาพเสียง</label>
     <select id="audioBitrateKbps">
-      <option value="32">32 kbps — ประหยัดที่สุด พอสำหรับฟังทวน</option>
-      <option value="64">64 kbps — สมดุล (แนะนำ)</option>
-      <option value="128">128 kbps — ชัดที่สุด ไฟล์ใหญ่ขึ้นเท่าตัว</option>
+      <option value="32">32 kbps · ประหยัดที่สุด พอสำหรับฟังทวน</option>
+      <option value="64">64 kbps · สมดุล (แนะนำ)</option>
+      <option value="128">128 kbps · ชัดที่สุด ไฟล์ใหญ่ขึ้นเท่าตัว</option>
     </select>
     <p class="hint" id="sizeHint"></p>
 
@@ -143,8 +152,14 @@
   </section>
 
   <!-- ============================================================= SLIDES -->
-  <section>
+  <section id="s-slides">
     <h2>🖼 จับภาพสไลด์</h2>
+
+    <p class="note warn" style="margin-bottom:16px">
+      ⚠️ <b>อย่าเปิด Picture-in-Picture</b> ระหว่างจับสไลด์ เพราะภาพจะย้ายไปหน้าต่างลอย
+      ทำให้แท็บว่างเปล่าและได้สไลด์ดำกลับมา<br>
+      ตอนนี้ระบบตรวจเจอเฟรมดำแล้วจะ<b>ไม่บันทึก</b>และเด้งเตือนให้ แต่ช่วงนั้นก็จะไม่ได้สไลด์เลย
+    </p>
 
     <label for="slideIntervalSec">ตรวจทุก <b id="slideIntervalSecLabel">3</b> วินาที</label>
     <input id="slideIntervalSec" type="range" min="1" max="30" step="1">
@@ -152,8 +167,8 @@
     <label for="changeThreshold">ถือว่าเปลี่ยนสไลด์เมื่อภาพต่างเกิน <b id="changeThresholdLabel">20</b>% ของจอ</label>
     <input id="changeThreshold" type="range" min="5" max="60" step="1">
     <p class="hint">
-      วัดเป็น <b>สัดส่วนพื้นที่ที่เปลี่ยน</b> ไม่ใช่ผลต่างของสีรวม ๆ นี่คือเหตุผลที่กล้องวิทยากรขยับไม่ทำให้จับรัว —
-      หน้าคนกินพื้นที่ราว 2–3% ส่วนการเปลี่ยนสไลด์เปลี่ยนราว 95%<br>
+      วัดเป็น <b>สัดส่วนพื้นที่ที่เปลี่ยน</b> ไม่ใช่ผลต่างของสีรวม ๆ<br>
+      นี่คือเหตุผลที่กล้องวิทยากรขยับไม่ทำให้จับรัว: หน้าคนกินพื้นที่ราว 2–3% ส่วนการเปลี่ยนสไลด์เปลี่ยนราว 95%<br>
       จับไม่ทันให้ลดลง · จับรัวเกินไปให้เพิ่มขึ้น
     </p>
 
@@ -187,13 +202,13 @@
     <p class="hint">
       ลบเฉพาะตอน Discord ยืนยันแล้วเท่านั้น ส่งไม่ผ่าน = เก็บไว้เหมือนเดิม<br>
       ⚠️ แต่ ZIP ที่ส่งออกจะไม่มีภาพพวกนั้น (timeline จะใส่ลิงก์ Discord ไว้แทน)
-      และลิงก์ CDN ของ Discord หมดอายุราว 24 ชม. — ยังเปิดดูในแอป Discord ได้ตลอด แต่เอา URL ไปแปะที่อื่นไม่ได้<br>
-      💡 สไลด์กินที่แค่ราว 0.4-8 MB ต่อประชุม ส่วน<b>เสียงกิน 27 MB ต่อชั่วโมง</b> — ถ้าจะประหยัดที่จริง ๆ ให้ไปลดคุณภาพเสียงคุ้มกว่า
+      และลิงก์ CDN ของ Discord หมดอายุราว 24 ชม. ยังเปิดดูในแอป Discord ได้ตลอด แต่เอา URL ไปแปะที่อื่นไม่ได้<br>
+      💡 สไลด์กินที่แค่ราว 0.4-8 MB ต่อประชุม ส่วน<b>เสียงกิน 27 MB ต่อชั่วโมง</b> ถ้าจะประหยัดที่จริง ๆ ให้ไปลดคุณภาพเสียงคุ้มกว่า
     </p>
   </section>
 
   <!-- ============================================================ GENERAL -->
-  <section>
+  <section id="s-general">
     <h2>ทั่วไป</h2>
 
     <div class="check">
@@ -212,6 +227,20 @@
       <span id="clearResult" class="muted"></span>
     </div>
     <p class="hint">ล้างรายการที่เคยเตือน = QR อันเดิมจะถูกเตือนใหม่อีกครั้ง (มีประโยชน์ตอนทดสอบ)</p>
+  </section>
+
+  <!-- =============================================================== TEST -->
+  <section id="s-test">
+    <h2>ทดสอบ</h2>
+    <p class="hint">หน้าจำลองไว้ลองระบบโดยไม่ต้องรอประชุมจริง</p>
+    <div class="row">
+      <button id="openQrTest">เปิดหน้าทดสอบ QR</button>
+      <button id="openSlideTest">เปิดหน้าทดสอบสไลด์</button>
+    </div>
+    <p class="hint">
+      หน้า QR มี 3 โค้ด อันที่สามชี้ไป <code>lin.ee</code> ไว้ลองว่า blacklist ทำงานไหม<br>
+      หน้าสไลด์มีกล่องที่ขยับตลอดเวลาเลียนแบบกล้องวิทยากร ไว้ลองว่าจับ false positive ไหม
+    </p>
   </section>
 
   <p id="saved" class="saved" hidden>บันทึกแล้ว</p>
