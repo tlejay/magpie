@@ -5,7 +5,6 @@
 // the archive navigable months later.
 
 import { getSessionBundle } from './db.js';
-import { DURATION_FIX_HINT } from './audio.js';
 
 /** fflate is loaded as a classic script by whichever page calls this. */
 function fflate() {
@@ -57,15 +56,28 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
   const ext = audioExtension(session.audioMimeType);
   const tree = {};
 
-  // --- audio: chunks concatenated in the order MediaRecorder produced them
+  // --- audio: one file per track, chunks concatenated in the order the
+  // recorder produced them. A 'mixed' session has a single 'mix' track;
+  // a 'separate' session has 'tab' and 'mic'.
   let audioBytes = 0;
+  const audioFiles = [];
   if (chunks.length) {
     onProgress('กำลังประกอบไฟล์เสียง', 0.2);
-    const audioBlob = new Blob(chunks.map((c) => c.blob), { type: session.audioMimeType || 'audio/webm' });
-    const u8 = await blobToU8(audioBlob);
-    audioBytes = u8.length;
-    // Already-compressed media — storing beats deflating on both speed and size.
-    tree[`audio.${ext}`] = [u8, { level: 0 }];
+    const byTrack = new Map();
+    for (const c of chunks) {
+      const track = c.track || 'mix';
+      if (!byTrack.has(track)) byTrack.set(track, []);
+      byTrack.get(track).push(c);
+    }
+    for (const [track, list] of byTrack) {
+      const blob = new Blob(list.map((c) => c.blob), { type: session.audioMimeType || 'audio/webm' });
+      const u8 = await blobToU8(blob);
+      audioBytes += u8.length;
+      const name = track === 'mix' ? `audio.${ext}` : `audio-${track}.${ext}`;
+      // Already-compressed media — storing beats deflating on both speed and size.
+      tree[name] = [u8, { level: 0 }];
+      audioFiles.push({ name, track, bytes: u8.length, chunks: list.length });
+    }
   }
 
   // --- slides
@@ -92,7 +104,9 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
       tabUrl: session.tabUrl,
       features: session.features,
       audioMimeType: session.audioMimeType,
+      audioLayout: session.audioLayout || 'mixed',
       micIncluded: session.micIncluded,
+      audioFiles: audioFiles.map((f) => ({ file: f.name, source: f.track, bytes: f.bytes })),
     },
     slides: slides.map((s, i) => ({
       seq: i + 1,
@@ -114,7 +128,7 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
     tree['qr-codes.json'] = fflate().strToU8(JSON.stringify(meta.qrCodes, null, 2));
   }
 
-  tree['timeline.md'] = fflate().strToU8(buildTimeline(session, meta, { audioFile: chunks.length ? `audio.${ext}` : null }));
+  tree['timeline.md'] = fflate().strToU8(buildTimeline(session, meta, { audioFiles }));
 
   onProgress('กำลังบีบเป็น ZIP', 0.9);
   const zipped = fflate().zipSync(tree, { level: 0 });
@@ -127,6 +141,7 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
       slides: slides.length,
       qrHits: qrHits.length,
       audioChunks: chunks.length,
+      audioFiles: audioFiles.length,
       audioBytes,
       slideBytes,
       zipBytes: zipped.length,
@@ -134,7 +149,7 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
   };
 }
 
-function buildTimeline(session, meta, { audioFile }) {
+function buildTimeline(session, meta, { audioFiles }) {
   const started = new Date(session.startedAt);
   const events = [
     ...meta.slides.map((s) => ({ offsetMs: s.offsetMs, kind: 'slide', text: `🖼 สไลด์ ${String(s.seq).padStart(3, '0')} — \`${s.file}\`` })),
@@ -147,18 +162,25 @@ function buildTimeline(session, meta, { audioFile }) {
   lines.push(`- **เริ่ม:** ${started.toLocaleString('th-TH')}`);
   lines.push(`- **ความยาว:** ${formatOffset(meta.session.durationMs)}`);
   if (session.tabUrl) lines.push(`- **แท็บ:** ${session.tabUrl}`);
-  if (audioFile) {
-    lines.push(`- **ไฟล์เสียง:** \`${audioFile}\`${session.micIncluded ? ' (เสียงแท็บ + ไมโครโฟน)' : ' (เสียงแท็บอย่างเดียว)'}`);
+  const SOURCE_LABEL = {
+    mix: session.micIncluded ? 'เสียงแท็บ + ไมโครโฟน' : 'เสียงแท็บอย่างเดียว',
+    tab: 'เสียงจากแท็บ (คนอื่น)',
+    mic: 'เสียงจากไมโครโฟนเรา',
+  };
+  for (const f of audioFiles) {
+    lines.push(`- **ไฟล์เสียง:** \`${f.name}\` (${SOURCE_LABEL[f.track] || f.track})`);
   }
   lines.push(`- **สไลด์:** ${meta.slides.length} ภาพ · **QR:** ${meta.qrCodes.length} รายการ`);
   lines.push('');
 
-  if (audioFile) {
+  if (audioFiles.length) {
     lines.push('> ตัวอัดเสียงเขียนหัวไฟล์ตั้งแต่ก่อนรู้ความยาว ไฟล์จึงไม่มีข้อมูลความยาวติดมา');
     lines.push('> เปิดฟังได้ปกติ แต่ถ้าโปรแกรมไหนเลื่อนเวลาไม่ได้ ให้เขียนหัวไฟล์ใหม่ด้วยคำสั่งนี้ก่อน:');
     lines.push('>');
     lines.push('> ```bash');
-    lines.push(`> ${DURATION_FIX_HINT}`);
+    for (const f of audioFiles) {
+      lines.push(`> ffmpeg -i ${f.name} -c copy fixed-${f.name}`);
+    }
     lines.push('> ```');
     lines.push('');
   }

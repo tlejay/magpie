@@ -176,15 +176,17 @@ async function start(msg) {
     audio = await createAudioPipeline({
       tabStream: stream,
       settings,
-      onChunk: async (blob, seq, offsetMs) => {
-        await putAudioChunk(session.id, seq, blob, offsetMs);
-        audioChunks = seq + 1;
+      onChunk: async (blob, seq, offsetMs, track) => {
+        await putAudioChunk(session.id, seq, blob, offsetMs, track);
+        audioChunks += 1;
       },
       onNotice: (code, detail) => report('AUDIO_NOTICE', { code, detail }),
     });
     await updateSession(session.id, {
       audioMimeType: audio.mimeType,
       micIncluded: audio.micIncluded,
+      audioLayout: audio.layout,
+      audioTracks: audio.tracks,
     });
   }
 

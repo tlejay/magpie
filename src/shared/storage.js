@@ -19,7 +19,7 @@ export const DEFAULT_SETTINGS = {
   maxLog: 50,
 
   // --- Listen (audio)
-  audioSource: 'tab',     // 'tab' works today; 'native' needs a companion app
+  audioLayout: 'mixed',   // 'mixed' = one file · 'separate' = tab and mic apart
   recordTabAudio: true,
   recordMic: true,
   micDeviceId: '',

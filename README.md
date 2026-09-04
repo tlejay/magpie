@@ -76,6 +76,10 @@ Capturing a tab's audio **mutes that tab**. Chrome hands you the stream and stop
 tab ──┬─(passthrough gain)─→ speakers      ← toggleable, and you pick the device
       └─────────────────┐
 mic ───(mic gain)───────┴─→ recorder       ← one mixed file, both sides of the call
+
+                    …or, in separate mode:
+tab ───────────────────────→ recorder      ← audio-tab.webm
+mic ───────────────────────→ recorder      ← audio-mic.webm
 ```
 
 The microphone is deliberately **never** routed to the speakers. Tab audio into your ears is correct; your own voice fed back into your ears is not.
@@ -90,7 +94,7 @@ The microphone is deliberately **never** routed to the speakers. Tab audio into 
 | Works with meetings in a tab | yes | yes |
 | Meeting app must be configured | **no** — it taps the audio before the device | yes |
 
-A `native` mode sits in the settings, clearly marked unfinished, so the choice is visible from day one rather than bolted on later.
+The recording can be one mixed file or two separate ones — tab and microphone apart — which matters when you want to transcribe just the speaker without your own voice in the way.
 
 ---
 
@@ -152,7 +156,7 @@ Each session exports as one ZIP:
 
 ```
 magpie-2026-09-03-1432/
-├── audio.webm              tab audio + your microphone, one file
+├── audio.webm              tab audio + your microphone (or audio-tab / audio-mic if split)
 ├── slides/
 │   ├── 001_00-03-12.jpg    filenames carry the offset into the recording
 │   └── 002_00-07-45.jpg
@@ -225,7 +229,7 @@ Tools can't be switched mid-session: they decide what the capture asks Chrome fo
   <img src="docs/options.png" width="620" alt="Options page">
 </p>
 
-Everything is adjustable: scan intervals, re-alert cooldown, deny- and allow-lists, alert sound and volume, whether snapshots reach Discord, audio source and bitrate and chunk size, passthrough and output device, microphone selection, and every threshold in the slide detector.
+Everything is adjustable: scan intervals, re-alert cooldown, deny- and allow-lists, alert sound and volume, whether snapshots reach Discord, audio bitrate and chunk size, one-file-or-two, passthrough and output device, microphone selection, and every threshold in the slide detector.
 
 ---
 
@@ -265,7 +269,7 @@ QR         forms.gle → alerts · lin.ee → filtered, and the counter goes up
 
 ## Limitations
 
-- **Meetings must run in a Chrome tab.** Desktop Zoom/Teams are invisible to an extension. That is what the unfinished `native` audio mode would solve.
+- **Meetings must run in a Chrome tab.** Desktop Zoom/Teams are invisible to an extension; supporting them would need a native macOS audio driver, which is a separate project.
 - Very small or heavily compressed QR codes are unrecoverable — see the benchmark.
 - Slide thresholds may need tuning for unusual layouts; every value is exposed.
 - DRM-protected video (Netflix and friends) captures as black frames. Untested.

@@ -79,16 +79,9 @@
   <section>
     <h2>🔊 อัดเสียง</h2>
 
-    <label for="audioSource">แหล่งเสียง</label>
-    <select id="audioSource">
-      <option value="tab">แท็บ Chrome (tab) — พร้อมใช้</option>
-      <option value="native">อุปกรณ์เสียงของระบบ (native) — ยังไม่พร้อม</option>
-    </select>
-    <p class="hint" id="audioSourceHint">
-      โหมด <code>tab</code> ดึงเสียงจากแท็บโดยตรง ไม่ต้องลง driver และไม่ต้องให้โปรแกรมประชุมตั้งค่าอะไร
-      แต่ใช้ได้เฉพาะประชุมที่เปิดในแท็บ<br>
-      โหมด <code>native</code> จะโผล่ในช่อง Speaker ของทุกโปรแกรม (แบบเดียวกับ Loom)
-      แต่ต้องมี audio driver ของ macOS กับโปรแกรมคู่หูแยกต่างหาก — <b>ยังทำไม่เสร็จ</b>
+    <p class="hint">
+      ดึงเสียงจากแท็บ Chrome โดยตรง ไม่ต้องลง driver และไม่ต้องให้โปรแกรมประชุมตั้งค่าอะไร
+      ใช้ได้กับประชุมที่เปิดในแท็บ (Zoom web / Meet / Teams web)
     </p>
 
     <div class="check">
@@ -113,8 +106,19 @@
       <label for="recordMic">อัดเสียงจากไมโครโฟนเราด้วย</label>
     </div>
     <p class="hint">
-      รวมเป็นไฟล์เดียวกัน จะได้ได้ยินบทสนทนาครบทั้งสองฝั่ง<br>
+      จะได้ได้ยินบทสนทนาครบทั้งสองฝั่ง (รวมไฟล์เดียวหรือแยกไฟล์ก็ได้ ดูหัวข้อถัดไป)<br>
       ต้องกดอนุญาตไมโครโฟนก่อนหนึ่งครั้ง — <a id="openPermission" href="#">เปิดหน้าอนุญาต</a>
+    </p>
+
+    <label for="audioLayout">รูปแบบไฟล์เสียง</label>
+    <select id="audioLayout">
+      <option value="mixed">ไฟล์เดียว — รวมเสียงแท็บกับไมค์เข้าด้วยกัน</option>
+      <option value="separate">แยกไฟล์ — เสียงแท็บกับไมค์คนละไฟล์</option>
+    </select>
+    <p class="hint">
+      แยกไฟล์มีประโยชน์ตอนอยากตัดต่อหรือถอดเสียงทีละฝั่ง เช่นถอดเฉพาะเสียงวิทยากรโดยไม่มีเสียงเราปน
+      แต่กินพื้นที่เป็นสองเท่าเพราะอัดสองชุด<br>
+      ตอนส่งออกจะได้ <code>audio-tab.webm</code> กับ <code>audio-mic.webm</code> แทน <code>audio.webm</code>
     </p>
 
     <label for="audioBitrateKbps">คุณภาพเสียง</label>

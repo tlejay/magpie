@@ -126,8 +126,8 @@ async function append(storeName, record) {
   await done(t);
 }
 
-export function putAudioChunk(sessionId, seq, blob, offsetMs) {
-  return append(STORE.CHUNKS, { sessionId, seq, blob, offsetMs, ts: Date.now() });
+export function putAudioChunk(sessionId, seq, blob, offsetMs, track = 'mix') {
+  return append(STORE.CHUNKS, { sessionId, seq, blob, offsetMs, track, ts: Date.now() });
 }
 
 export function putSlide(sessionId, seq, blob, offsetMs, meta = {}) {
@@ -151,7 +151,16 @@ async function bySession(storeName, sessionId) {
   return rows.sort((a, b) => (a.seq ?? a.ts) - (b.seq ?? b.ts));
 }
 
-export const getAudioChunks = (sessionId) => bySession(STORE.CHUNKS, sessionId);
+/**
+ * Audio chunks, ordered by track then sequence. With separate tab/mic files the
+ * two tracks interleave in the store, and concatenating them in insertion order
+ * would produce two corrupt files instead of two good ones.
+ */
+export async function getAudioChunks(sessionId) {
+  const rows = await bySession(STORE.CHUNKS, sessionId);
+  return rows.sort((a, b) =>
+    (a.track || 'mix').localeCompare(b.track || 'mix') || a.seq - b.seq);
+}
 export const getSlides = (sessionId) => bySession(STORE.SLIDES, sessionId);
 export const getQrHits = (sessionId) => bySession(STORE.QR_HITS, sessionId);
 

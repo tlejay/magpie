@@ -33,7 +33,8 @@ popup ─(getMediaStreamId ใน user gesture)→ service-worker ─(createDocu
    `tabSource → passthroughGain → ctx.destination` กลับเสมอ ไม่งั้นประชุมเงียบทั้งงาน
    → ถ้าผู้ใช้ไม่เปิดการอัดเสียง **ห้ามขอ audio ตั้งแต่แรก**
 3. **ห้ามต่อไมค์เข้า `ctx.destination`** เด็ดขาด — จะได้ยินเสียงตัวเองย้อนกลับ
-   ไมค์ต่อเข้า `mixDestination` (ตัวที่ป้อน MediaRecorder) อย่างเดียว
+   ไมค์ต่อเข้า MediaStreamDestination ที่ป้อน MediaRecorder อย่างเดียว
+   (โหมด `mixed` ใช้ destination เดียวร่วมกับแท็บ · โหมด `separate` แยก destination กันคนละตัว)
 4. **`chrome.tabCapture.getMediaStreamId()` ต้องเรียกจาก popup** ภายใน user gesture
    ย้ายไป service worker แล้วจะได้ stream id ที่ใช้ไม่ได้
 5. **ห้าม hardcode webhook URL** — อ่านจาก `src/config.local.js` ที่ gitignored ไว้

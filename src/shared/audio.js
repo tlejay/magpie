@@ -1,5 +1,5 @@
 // The "virtual speaker": tab audio keeps playing out of the real speakers while
-// a copy of it — mixed with the microphone — is recorded to disk.
+// a copy of it — with or without the microphone mixed in — is recorded to disk.
 //
 // Two rules govern this whole file, and breaking either one ruins a meeting:
 //
@@ -9,9 +9,11 @@
 //   2. The microphone must NEVER reach ctx.destination. Tab audio -> speakers is
 //      fine; mic -> speakers is a feedback loop into the user's own ears.
 //
-//        tab ──┬─(passthroughGain)─→ ctx.destination ──→ real speakers
-//              └─────────────────┐
-//        mic ────(micGain)───────┴─→ mixDestination ──→ MediaRecorder
+//   mixed layout                        separate layout
+//   ────────────                        ───────────────
+//   tab ─┬─(pass)→ speakers             tab ─┬─(pass)→ speakers
+//        └────────┐                          └────────→ [tab recorder]
+//   mic ──────────┴→ [one recorder]     mic ───────────→ [mic recorder]
 
 const PREFERRED_MIME_TYPES = [
   'audio/webm;codecs=opus',
@@ -20,6 +22,8 @@ const PREFERRED_MIME_TYPES = [
 ];
 
 const RAMP_SECONDS = 0.015; // short fade so toggling passthrough doesn't click
+
+export const TRACK = { MIX: 'mix', TAB: 'tab', MIC: 'mic' };
 
 export function pickMimeType() {
   for (const type of PREFERRED_MIME_TYPES) {
@@ -32,18 +36,20 @@ export function pickMimeType() {
  * @param {object}   opts
  * @param {MediaStream} opts.tabStream   stream from tabCapture (must contain an audio track)
  * @param {object}   opts.settings       audio settings from storage
- * @param {Function} opts.onChunk        (blob, seq, offsetMs) => Promise — persist immediately
+ * @param {Function} opts.onChunk        (blob, seq, offsetMs, track) => Promise — persist immediately
  * @param {Function} opts.onNotice       (code, detail) => void — non-fatal problems worth telling the user
  */
 export async function createAudioPipeline({ tabStream, settings, onChunk, onNotice }) {
   const tabTrack = tabStream.getAudioTracks()[0];
   if (!tabTrack) throw new Error('ไม่มี audio track ในสตรีมของแท็บ');
 
+  const layout = settings.audioLayout === 'separate' ? 'separate' : 'mixed';
+  const wantTab = settings.recordTabAudio !== false;
+
   const ctx = new AudioContext();
   if (ctx.state === 'suspended') await ctx.resume();
 
   const tabSource = ctx.createMediaStreamSource(new MediaStream([tabTrack]));
-  const mixDestination = ctx.createMediaStreamDestination();
 
   // --- passthrough: the repair for Chrome muting the captured tab
   const passthroughGain = ctx.createGain();
@@ -51,11 +57,9 @@ export async function createAudioPipeline({ tabStream, settings, onChunk, onNoti
   tabSource.connect(passthroughGain);
   passthroughGain.connect(ctx.destination);
 
-  // --- the recorded mix
   const tabRecordGain = ctx.createGain();
-  tabRecordGain.gain.value = settings.recordTabAudio === false ? 0 : 1;
+  tabRecordGain.gain.value = wantTab ? 1 : 0;
   tabSource.connect(tabRecordGain);
-  tabRecordGain.connect(mixDestination);
 
   const tabAnalyser = ctx.createAnalyser();
   tabAnalyser.fftSize = 512;
@@ -76,8 +80,7 @@ export async function createAudioPipeline({ tabStream, settings, onChunk, onNoti
       const micSource = ctx.createMediaStreamSource(micStream);
       micGain = ctx.createGain();
       micGain.gain.value = 1;
-      micSource.connect(micGain);
-      micGain.connect(mixDestination); // deliberately NOT ctx.destination
+      micSource.connect(micGain); // deliberately never connected to ctx.destination
 
       micAnalyser = ctx.createAnalyser();
       micAnalyser.fftSize = 512;
@@ -89,29 +92,61 @@ export async function createAudioPipeline({ tabStream, settings, onChunk, onNoti
     }
   }
 
-  // --- recorder
-  const mimeType = pickMimeType();
-  const recorder = new MediaRecorder(mixDestination.stream, {
-    ...(mimeType ? { mimeType } : {}),
-    audioBitsPerSecond: (settings.audioBitrateKbps || 64) * 1000,
-  });
+  // ---------------------------------------------------------------- recorders
 
+  const mimeType = pickMimeType();
   const startedAt = Date.now();
-  let seq = 0;
+  const timeslice = Math.max(1000, (settings.chunkSeconds || 5) * 1000);
+  const recorders = [];
   let pending = Promise.resolve();
 
-  recorder.ondataavailable = (event) => {
-    if (!event.data || !event.data.size) return;
-    const mySeq = seq++;
-    const offsetMs = Date.now() - startedAt;
-    // Chain the writes so chunks reach storage in order even if IndexedDB is slow.
-    pending = pending
-      .then(() => onChunk(event.data, mySeq, offsetMs))
-      .catch((err) => onNotice?.('chunk-write-failed', String(err?.message || err)));
-  };
-  recorder.onerror = (event) => onNotice?.('recorder-error', String(event?.error?.name || 'unknown'));
+  function addRecorder(track, destination) {
+    const recorder = new MediaRecorder(destination.stream, {
+      ...(mimeType ? { mimeType } : {}),
+      audioBitsPerSecond: (settings.audioBitrateKbps || 64) * 1000,
+    });
+    const entry = { track, recorder, seq: 0 };
 
-  recorder.start(Math.max(1000, (settings.chunkSeconds || 5) * 1000));
+    recorder.ondataavailable = (event) => {
+      if (!event.data || !event.data.size) return;
+      const mySeq = entry.seq++;
+      const offsetMs = Date.now() - startedAt;
+      // Chain the writes so chunks reach storage in order even if IndexedDB is slow.
+      pending = pending
+        .then(() => onChunk(event.data, mySeq, offsetMs, track))
+        .catch((err) => onNotice?.('chunk-write-failed', String(err?.message || err)));
+    };
+    recorder.onerror = (event) =>
+      onNotice?.('recorder-error', `${track}: ${String(event?.error?.name || 'unknown')}`);
+
+    recorder.start(timeslice);
+    recorders.push(entry);
+  }
+
+  if (layout === 'separate') {
+    // One file per source. Costs a little more space than a single mix, but
+    // lets the user edit or transcribe either side on its own.
+    if (wantTab) {
+      const dest = ctx.createMediaStreamDestination();
+      tabRecordGain.connect(dest);
+      addRecorder(TRACK.TAB, dest);
+    }
+    if (micGain) {
+      const dest = ctx.createMediaStreamDestination();
+      micGain.connect(dest);
+      addRecorder(TRACK.MIC, dest);
+    }
+  } else {
+    const dest = ctx.createMediaStreamDestination();
+    tabRecordGain.connect(dest);
+    micGain?.connect(dest);
+    addRecorder(TRACK.MIX, dest);
+  }
+
+  if (!recorders.length) {
+    await ctx.close().catch(() => {});
+    throw new Error('ไม่มีแหล่งเสียงให้อัดเลย — เปิดอัดเสียงแท็บหรือไมโครโฟนอย่างน้อยหนึ่งอย่าง');
+  }
 
   // Applying a stored sink choice can fail (device unplugged) — never fatal.
   if (settings.outputDeviceId) {
@@ -124,7 +159,9 @@ export async function createAudioPipeline({ tabStream, settings, onChunk, onNoti
     ctx,
     mimeType,
     startedAt,
+    layout,
     micIncluded: !!micStream,
+    tracks: recorders.map((r) => r.track),
 
     setPassthrough(on) {
       const now = ctx.currentTime;
@@ -143,11 +180,11 @@ export async function createAudioPipeline({ tabStream, settings, onChunk, onNoti
     },
 
     async stop() {
-      const finished = new Promise((resolve) => {
-        recorder.onstop = resolve;
-      });
-      if (recorder.state !== 'inactive') recorder.stop();
-      await finished;
+      await Promise.all(recorders.map((entry) => new Promise((resolve) => {
+        entry.recorder.onstop = resolve;
+        if (entry.recorder.state !== 'inactive') entry.recorder.stop();
+        else resolve();
+      })));
       await pending; // make sure the last chunk is written before we tear down
 
       micStream?.getTracks().forEach((t) => t.stop());
@@ -155,7 +192,13 @@ export async function createAudioPipeline({ tabStream, settings, onChunk, onNoti
         await ctx.close();
       } catch { /* already closed */ }
 
-      return { chunks: seq, durationMs: Date.now() - startedAt, mimeType };
+      return {
+        layout,
+        mimeType,
+        durationMs: Date.now() - startedAt,
+        chunks: recorders.reduce((sum, r) => sum + r.seq, 0),
+        perTrack: Object.fromEntries(recorders.map((r) => [r.track, r.seq])),
+      };
     },
   };
 }
@@ -184,5 +227,4 @@ function rms(analyser) {
  * seeking in some players needs the header rewritten first. Handed to the user
  * in the export rather than hidden.
  */
-export const DURATION_FIX_HINT =
-  'ffmpeg -i audio.webm -c copy audio-fixed.webm';
+export const DURATION_FIX_HINT = 'ffmpeg -i <file> -c copy <file>-fixed.webm';

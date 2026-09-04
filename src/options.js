@@ -16,7 +16,7 @@ const FIELDS = [
   { id: 'attachSnapshot', kind: 'check' },
 
   // --- audio
-  { id: 'audioSource', kind: 'select' },
+  { id: 'audioLayout', kind: 'select' },
   { id: 'passthrough', kind: 'check' },
   { id: 'outputDeviceId', kind: 'select' },
   { id: 'recordTabAudio', kind: 'check' },
@@ -54,9 +54,9 @@ async function init() {
     if (f.kind === 'text') node.addEventListener('blur', persist);
   }
 
-  el('audioSource').addEventListener('change', reflectAudioSource);
-  el('audioBitrateKbps').addEventListener('change', updateSizeHint);
-  el('chunkSeconds').addEventListener('input', updateSizeHint);
+  for (const id of ['audioBitrateKbps', 'audioLayout', 'recordMic', 'recordTabAudio']) {
+    el(id).addEventListener('change', updateSizeHint);
+  }
 
   el('testWebhook').addEventListener('click', onTestWebhook);
   el('testSound').addEventListener('click', () => {
@@ -107,7 +107,6 @@ async function load() {
     else node.value = value ?? '';
   }
   syncLabels();
-  reflectAudioSource();
   updateSizeHint();
 }
 
@@ -120,16 +119,15 @@ function syncLabels() {
   }
 }
 
-/** Make the unfinished mode obviously unfinished, here rather than at start time. */
-function reflectAudioSource() {
-  el('audioSourceHint').classList.toggle('bad', el('audioSource').value === 'native');
-}
-
 function updateSizeHint() {
   const kbps = Number(el('audioBitrateKbps').value) || 64;
-  const mbPerHour = (kbps * 1000 * 3600) / 8 / 1024 / 1024;
+  // Separate layout runs two recorders, so it costs twice the space.
+  const streams = el('audioLayout').value === 'separate'
+    && el('recordMic').checked && el('recordTabAudio').checked ? 2 : 1;
+  const mbPerHour = ((kbps * 1000 * 3600) / 8 / 1024 / 1024) * streams;
   el('sizeHint').textContent =
-    `ประมาณ ${mbPerHour.toFixed(0)} MB ต่อชั่วโมง — ประชุม 2 ชม. ราว ${(mbPerHour * 2).toFixed(0)} MB`;
+    `ประมาณ ${mbPerHour.toFixed(0)} MB ต่อชั่วโมง — ประชุม 2 ชม. ราว ${(mbPerHour * 2).toFixed(0)} MB`
+    + (streams === 2 ? ' (อัดสองชุด)' : '');
 }
 
 async function listOutputDevices() {

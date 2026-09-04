@@ -106,10 +106,6 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
   if (!features.qr && !features.audio && !features.slides) {
     throw new Error('เปิดเครื่องมืออย่างน้อยหนึ่งอย่างก่อน');
   }
-  if (settings.enableAudio && settings.audioSource === 'native') {
-    throw new Error('โหมด native ยังไม่พร้อมใช้ — เลือก tab ก่อน');
-  }
-
   await ensureOffscreen();
 
   const res = await sendToOffscreenReady({
