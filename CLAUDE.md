@@ -98,6 +98,25 @@ node /tmp/slidetest/run.mjs   # ตัวตรวจสไลด์กับภ
 เรนเดอร์ UI ตรวจ layout โดยไม่ต้องโหลด extension: stub ข้อมูลลง HTML แล้ว
 `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --screenshot=out.png file://…`
 
+## ⚠️ อัป build stamp ทุกครั้งที่จะ push
+
+popup กับหน้า options โชว์ `version_name` จาก manifest เพื่อให้ตอบได้ว่า
+"Reload ติดหรือยัง" โดยไม่ต้องเดา — **ถ้าไม่อัปเลข ป้ายนั้นจะโกหก** และเสียเวลาทดสอบทั้งรอบ
+
+```bash
+python3 - <<'EOF'
+import json, datetime
+m = json.load(open('manifest.json', encoding='utf-8'))
+m['version_name'] = f"{m['version']} · build {datetime.datetime.now():%m%d-%H%M}"
+json.dump(m, open('manifest.json','w',encoding='utf-8'), indent=2, ensure_ascii=False)
+open('manifest.json','a').write('\n')
+print(m['version_name'])
+EOF
+```
+
+`version` ต้องเป็นตัวเลขคั่นจุดเท่านั้น (กฎของ Chrome) ส่วน `version_name` ใส่ข้อความอะไรก็ได้
+เพิ่ม `version` เองเมื่อมีฟีเจอร์ใหม่จริง ๆ ส่วน build stamp อัปทุก push
+
 ## Git
 
 - public repo `github.com/tlejay/magpie` · commit + push ได้เลยหลังทำงานเสร็จแต่ละก้อน

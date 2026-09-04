@@ -7,6 +7,12 @@ body {
   margin: 0; padding: 32px 20px 80px; background: var(--bg); color: var(--text);
   font: 14px/1.6 "Noto Sans Thai", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
+
+/* The `hidden` attribute works through display:none in the UA stylesheet, which
+   any author `display` rule outranks — .stats { display: grid } silently made
+   el.hidden = true do nothing, so the stats table kept showing stale numbers
+   after stopping. Restore it once, for every element. */
+[hidden] { display: none !important; }
 main { max-width: 620px; margin: 0 auto; }
 header { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
 header img { width: 52px; height: 52px; border-radius: 12px; }

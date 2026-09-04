@@ -19,6 +19,10 @@ let levelTimer = null;
 init();
 
 async function init() {
+  const manifest = chrome.runtime.getManifest();
+  el('version').textContent = manifest.version_name || manifest.version;
+  el('version').title = 'เวอร์ชันที่โหลดอยู่จริง — ถ้าไม่ตรงกับที่คาด แปลว่ายังไม่ได้ Reload';
+
   [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
   ui.toggle.addEventListener('click', onToggle);

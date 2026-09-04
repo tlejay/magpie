@@ -42,6 +42,9 @@ const FIELDS = [
 init();
 
 async function init() {
+  const manifest = chrome.runtime.getManifest();
+  el('version').textContent = manifest.version_name || manifest.version;
+
   await reportEngine();
   await load();
   await listOutputDevices();
