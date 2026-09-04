@@ -84,33 +84,24 @@ export function createSlideDetector(options = {}) {
 
   /**
    * @returns {{save: boolean, ratio: number, phase: string}}
-   *   phase: 'idle' | 'candidate' | 'settling' | 'save'
+   *   phase: 'first' | 'idle' | 'candidate' | 'settling' | 'save'
    */
   function check(source, roi = null) {
     const sig = signature(source, roi);
 
-    // Nothing saved yet: capture whatever is on screen once it holds still.
+    // Nothing saved yet — take the screen as it is, right now.
+    //
+    // The settle wait exists to avoid catching a fade BETWEEN two slides. At
+    // start there is no transition to wait out: whatever is on screen is the
+    // baseline. Making the user wait two full intervals for the first capture
+    // was just a bug. If the tab had not painted yet the frame will be blank,
+    // and the next real slide reads as a ~100% change and captures correctly.
     if (!reference) {
-      if (!candidate) {
-        candidate = sig;
-        stable = 0;
-        return { save: false, ratio: 0, phase: 'candidate' };
-      }
-      const settle = ratio(sig, candidate);
-      lastRatio = settle;
-      if (settle <= cfg.stableThreshold) {
-        stable += 1;
-        if (stable >= cfg.stabilityChecks) {
-          reference = sig;
-          candidate = null;
-          stable = 0;
-          return { save: true, ratio: settle, phase: 'save' };
-        }
-        return { save: false, ratio: settle, phase: 'settling' };
-      }
-      candidate = sig;
+      reference = sig;
+      candidate = null;
       stable = 0;
-      return { save: false, ratio: settle, phase: 'candidate' };
+      lastRatio = 0;
+      return { save: true, ratio: 1, phase: 'first' };
     }
 
     const changed = ratio(sig, reference);

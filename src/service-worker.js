@@ -185,6 +185,9 @@ async function applySettingsToCapture() {
         stabilityChecks: settings.stabilityChecks,
         slideQuality: settings.slideQuality,
         maxSlides: settings.maxSlides,
+        // offscreen reads this to decide whether to encode the full-size
+        // snapshot at all — without it, ticking the box mid-session did nothing.
+        slidesToDiscord: settings.slidesToDiscord,
       },
     }).catch(() => {});
   }
