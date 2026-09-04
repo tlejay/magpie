@@ -9,13 +9,14 @@ A Chrome extension that watches any meeting tab and keeps the parts worth keepin
 ![Local](https://img.shields.io/badge/processing-100%25%20local-1db954)
 
 <p align="center">
-  <img src="docs/popup.png" width="360" alt="Magpie popup with all three tools running">
+  <img src="docs/popup.png" width="720" alt="The popup stopped, and the popup while running">
+  <br><em>Stopped: arm the tools and start. Running: live counters, audio meters, and nothing you can accidentally change mid-session.</em>
 </p>
 
 | | |
 |---|---|
 | 👁 **Watch** | Finds QR codes on screen, alerts you, and pushes the link to Discord |
-| 🔊 **Listen** | A virtual speaker — audio still plays normally while a copy is recorded locally, mixed with your microphone |
+| 🔊 **Listen** | A virtual speaker: audio still plays normally while a copy is recorded locally, with your microphone mixed in or kept as a separate file |
 | 🖼 **Collect** | Saves a screenshot every time the slide actually changes, decided by comparing images on your machine — optionally pushing each one to Discord as it happens |
 
 Works with any meeting that runs in a Chrome tab: Zoom web client, Google Meet, Microsoft Teams, Webex, or a livestream. Nothing in it is tied to a particular platform — it reads pixels and audio from the tab you point it at.
@@ -238,13 +239,15 @@ Tools can't be switched mid-session: they decide what the capture asks Chrome fo
   <img src="docs/options.png" width="620" alt="Options page">
 </p>
 
-Everything is adjustable: scan intervals, re-alert cooldown, deny- and allow-lists, alert sound and volume, whether snapshots reach Discord, audio bitrate and chunk size, one-file-or-two, passthrough and output device, microphone selection, and every threshold in the slide detector.
+Everything is adjustable: scan intervals, re-alert cooldown, deny- and allow-lists, alert sound and volume, audio bitrate and chunk size, one-file-or-two, passthrough and output device, microphone selection, whether slides go to Discord as they are captured, and every threshold in the slide detector.
+
+The popup and the options page both print the loaded build (`1.2.0 · build 0904-1813`). Loading unpacked means iterating on code Chrome has already cached, and "did the reload take?" is otherwise a guess that costs a whole test round.
 
 ---
 
 ## Testing without a real meeting
 
-Two harnesses ship with the extension, reachable from the popup footer.
+Two harnesses ship with the extension, under **Options → ทดสอบ**.
 
 **`test/qr-test.html`** — a QR appears after a countdown, at a size you choose, with a swappable payload and a dark-background mode. One of the three codes points at `lin.ee`, so you can watch the deny-list work.
 
