@@ -169,6 +169,26 @@
 
     <label for="maxSlides">เก็บสูงสุด <b id="maxSlidesLabel">300</b> ภาพต่อการประชุม</label>
     <input id="maxSlides" type="range" min="20" max="1000" step="20">
+
+    <div class="check">
+      <input id="slidesToDiscord" type="checkbox">
+      <label for="slidesToDiscord">ส่งสไลด์เข้า Discord ทันทีที่จับได้</label>
+    </div>
+    <p class="hint">
+      ได้ดูสไลด์จากมือถือระหว่างประชุมเลย · ประชุมชั่วโมงนึงจะได้ราว 30-50 ข้อความ
+      ถ้าไม่อยากให้ปนกับข้อความ QR แนะนำให้แยก webhook คนละ channel
+    </p>
+
+    <div class="check">
+      <input id="slideDeleteLocalAfterUpload" type="checkbox">
+      <label for="slideDeleteLocalAfterUpload">ลบสำเนาในเครื่องหลังส่งขึ้น Discord สำเร็จ</label>
+    </div>
+    <p class="hint">
+      ลบเฉพาะตอน Discord ยืนยันแล้วเท่านั้น ส่งไม่ผ่าน = เก็บไว้เหมือนเดิม<br>
+      ⚠️ แต่ ZIP ที่ส่งออกจะไม่มีภาพพวกนั้น (timeline จะใส่ลิงก์ Discord ไว้แทน)
+      และลิงก์ CDN ของ Discord หมดอายุราว 24 ชม. — ยังเปิดดูในแอป Discord ได้ตลอด แต่เอา URL ไปแปะที่อื่นไม่ได้<br>
+      💡 สไลด์กินที่แค่ราว 0.4-8 MB ต่อประชุม ส่วน<b>เสียงกิน 27 MB ต่อชั่วโมง</b> — ถ้าจะประหยัดที่จริง ๆ ให้ไปลดคุณภาพเสียงคุ้มกว่า
+    </p>
   </section>
 
   <!-- ============================================================ GENERAL -->

@@ -333,10 +333,15 @@ async function checkSlide() {
 
   const offsetMs = Date.now() - startedAt;
   slideSeq += 1;
-  await putSlide(session.id, slideSeq, blob, offsetMs, { ratio: result.ratio });
+  const slideId = await putSlide(session.id, slideSeq, blob, offsetMs, { ratio: result.ratio });
 
   const thumb = await toDataUrl(saveCanvas, 480, 0.55);
-  report('SLIDE_SAVED', { seq: slideSeq, offsetMs, ratio: result.ratio, thumb });
+  // Only pay for the full-size encode when something is actually going to send it.
+  const snapshot = settings.slidesToDiscord ? await toDataUrl(saveCanvas, 1280, 0.8) : null;
+
+  report('SLIDE_SAVED', {
+    slideId, seq: slideSeq, offsetMs, ratio: result.ratio, thumb, snapshot,
+  });
 }
 
 // ---------------------------------------------------------------- helpers

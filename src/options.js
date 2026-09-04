@@ -31,6 +31,8 @@ const FIELDS = [
   { id: 'stabilityChecks', kind: 'range' },
   { id: 'slideQuality', kind: 'range', toStore: (v) => v / 100, fromStore: (v) => Math.round(v * 100) },
   { id: 'maxSlides', kind: 'range' },
+  { id: 'slidesToDiscord', kind: 'check' },
+  { id: 'slideDeleteLocalAfterUpload', kind: 'check' },
 
   // --- general
   { id: 'keepAwake', kind: 'check' },

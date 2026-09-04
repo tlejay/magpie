@@ -119,11 +119,13 @@ export async function getSession(id) {
 
 // ---------------------------------------------------------------- appends
 
+/** Returns the generated key, so callers can update or drop the row later. */
 async function append(storeName, record) {
   const db = await openDb();
   const t = tx(db, [storeName], 'readwrite');
-  t.objectStore(storeName).add(record);
+  const key = await request(t.objectStore(storeName).add(record));
   await done(t);
+  return key;
 }
 
 export function putAudioChunk(sessionId, seq, blob, offsetMs, track = 'mix') {
@@ -132,6 +134,29 @@ export function putAudioChunk(sessionId, seq, blob, offsetMs, track = 'mix') {
 
 export function putSlide(sessionId, seq, blob, offsetMs, meta = {}) {
   return append(STORE.SLIDES, { sessionId, seq, blob, offsetMs, ts: Date.now(), ...meta });
+}
+
+async function updateRow(storeName, id, patch) {
+  const db = await openDb();
+  const t = tx(db, [storeName], 'readwrite');
+  const store = t.objectStore(storeName);
+  const current = await request(store.get(id));
+  if (current) store.put({ ...current, ...patch });
+  await done(t);
+  return !!current;
+}
+
+/** Remember where Discord put the copy, so the timeline can point at it. */
+export function markSlideUploaded(id, discordUrl) {
+  return updateRow(STORE.SLIDES, id, { discordUrl, uploadedAt: Date.now() });
+}
+
+/**
+ * Free the local bytes but keep the row. Only ever called after Discord has
+ * confirmed the upload — losing a slide to save a few hundred KB is a bad trade.
+ */
+export function dropSlideBlob(id) {
+  return updateRow(STORE.SLIDES, id, { blob: null, blobDropped: true });
 }
 
 export function putQrHit(sessionId, hit) {

@@ -16,7 +16,7 @@ A Chrome extension that watches any meeting tab and keeps the parts worth keepin
 |---|---|
 | 👁 **Watch** | Finds QR codes on screen, alerts you, and pushes the link to Discord |
 | 🔊 **Listen** | A virtual speaker — audio still plays normally while a copy is recorded locally, mixed with your microphone |
-| 🖼 **Collect** | Saves a screenshot every time the slide actually changes, decided by comparing images on your machine |
+| 🖼 **Collect** | Saves a screenshot every time the slide actually changes, decided by comparing images on your machine — optionally pushing each one to Discord as it happens |
 
 Works with any meeting that runs in a Chrome tab: Zoom web client, Google Meet, Microsoft Teams, Webex, or a livestream. Nothing in it is tied to a particular platform — it reads pixels and audio from the tab you point it at.
 
@@ -113,6 +113,15 @@ Measured against synthetic slides with a webcam tile animating throughout:
 | An actual slide change | **94.4 – 96.5 %** | captured ✅ |
 
 The gap between noise and signal is roughly 35×, which is why the default 20 % threshold has so much room on either side. Every number above is adjustable.
+
+### Slides to Discord
+
+Captured slides can also be pushed to the webhook the moment they are taken, so a phone shows the deck as it happens. Two things measured against a live webhook before shipping it:
+
+- The uploaded file is consumed by the embed's `attachment://` reference, so Discord returns it on `embeds[0].image.url` and leaves `attachments` empty — reading the wrong one silently stores a null link.
+- Those CDN links **expire after about 24 hours** (`?ex=` in the URL). The file itself stays on the message forever and Discord refreshes the link when you open it; only hotlinking the URL from elsewhere breaks.
+
+There is an option to free the local copy once Discord confirms the upload, and it only ever deletes after a confirmed response. Worth knowing before turning it on: **slides cost 0.4–8 MB per meeting while audio costs ~27 MB per hour**, so this saves the smaller half. Slides freed this way are not in the exported ZIP; `timeline.md` links to Discord for them instead.
 
 <p align="center">
   <img src="docs/slide-detection.jpg" width="700" alt="Two test slides with the animated webcam tile that must not trigger a capture">

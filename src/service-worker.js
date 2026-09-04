@@ -6,7 +6,8 @@ import {
   addLogEntry, updateLogEntry, getSeen, markSeen, DEFAULT_SETTINGS,
 } from './shared/storage.js';
 import { extractUrl, passesFilter, isBlocked } from './shared/qr.js';
-import { putQrHit } from './shared/db.js';
+import { putQrHit, markSlideUploaded, dropSlideBlob } from './shared/db.js';
+import { formatOffset } from './shared/export.js';
 
 const OFFSCREEN_PATH = 'src/offscreen.html';
 const WATCHDOG_ALARM = 'magpie-watchdog';
@@ -204,11 +205,32 @@ async function handleHeartbeat({ scanCount, slideCount, audioChunks, frameW, fra
   });
 }
 
-async function handleSlideSaved({ seq, offsetMs }) {
+async function handleSlideSaved({ slideId, seq, offsetMs, snapshot }) {
   const state = await getState();
   if (!state.monitoring) return;
   await setState({ slideCount: seq ?? state.slideCount + 1, lastHeartbeatAt: Date.now() });
-  return { seq, offsetMs };
+
+  const settings = await getSettings();
+  if (!settings.slidesToDiscord || !settings.webhookUrl || !snapshot) return { seq, offsetMs };
+
+  const result = await sendSlideToDiscord(settings, {
+    snapshot, seq, offsetMs, tabTitle: state.tabTitle,
+  });
+
+  if (result.ok) {
+    if (slideId != null) {
+      await markSlideUploaded(slideId, result.url).catch(() => {});
+      // Only ever drop local bytes after Discord has confirmed it has a copy.
+      if (settings.slideDeleteLocalAfterUpload) await dropSlideBlob(slideId).catch(() => {});
+    }
+  } else if (!state.slideUploadFailed) {
+    // Tell the user once per session, not once per slide.
+    await setState({ slideUploadFailed: true });
+    await notifyPlain('ส่งสไลด์เข้า Discord ไม่สำเร็จ',
+      `${result.error}\nภาพยังถูกเก็บไว้ในเครื่อง ส่งออกทีหลังได้`);
+  }
+
+  return { seq, offsetMs, uploaded: result.ok };
 }
 
 // A denied microphone or a failed sink must be visible. Silently producing a
@@ -444,17 +466,58 @@ async function sendToDiscord(settings, { text, url, snapshot, tabTitle, ts }) {
     embeds: [embed],
   };
 
+  return postWebhook(settings.webhookUrl, payload,
+    snapshot ? { blob: dataUrlToBlob(snapshot), name: 'snapshot.jpg' } : null);
+}
+
+/** One slide, sent the moment it is captured. */
+async function sendSlideToDiscord(settings, { snapshot, seq, offsetMs, tabTitle }) {
+  const label = String(seq).padStart(3, '0');
+  const name = `slide-${label}.jpg`;
+
+  const result = await postWebhook(settings.webhookUrl, {
+    username: 'Magpie',
+    content: `🖼 **สไลด์ ${label}** · ${formatOffset(offsetMs)}`,
+    embeds: [{
+      color: 0xf59e0b,
+      image: { url: `attachment://${name}` },
+      footer: { text: tabTitle ? `จากแท็บ: ${tabTitle}`.slice(0, 2048) : 'Magpie' },
+      timestamp: new Date().toISOString(),
+    }],
+  }, { blob: dataUrlToBlob(snapshot), name }, { wait: true });
+
+  if (!result.ok) return result;
+
+  // ?wait=true returns the created message. The uploaded file is consumed by the
+  // embed's attachment:// reference, so Discord empties `attachments` and puts
+  // the real CDN link on the embed instead — verified against a live webhook.
+  const body = result.body;
+  const url = body?.embeds?.[0]?.image?.url || body?.attachments?.[0]?.url || null;
+  return { ok: true, url, messageId: body?.id || null };
+}
+
+/**
+ * Multipart POST with one retry and 429 back-off.
+ * `wait` asks Discord to return the created message instead of 204.
+ */
+async function postWebhook(webhookUrl, payload, file, { wait = false } = {}) {
+  const url = wait
+    ? `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}wait=true`
+    : webhookUrl;
+
   const build = () => {
     const fd = new FormData();
     fd.append('payload_json', JSON.stringify(payload));
-    if (snapshot) fd.append('files[0]', dataUrlToBlob(snapshot), 'snapshot.jpg');
+    if (file) fd.append('files[0]', file.blob, file.name);
     return fd;
   };
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(settings.webhookUrl, { method: 'POST', body: build() });
-      if (res.ok) return { ok: true };
+      const res = await fetch(url, { method: 'POST', body: build() });
+      if (res.ok) {
+        return { ok: true, body: wait ? await res.json().catch(() => null) : null };
+      }
       if (res.status === 429) {
         const body = await res.json().catch(() => ({}));
         await sleep(Math.min(10_000, (body.retry_after || 1) * 1000 + 250));

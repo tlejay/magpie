@@ -36,6 +36,8 @@ export const DEFAULT_SETTINGS = {
   stabilityChecks: 1,     // confirming samples before saving
   slideQuality: 0.8,
   maxSlides: 300,
+  slidesToDiscord: false,          // send each captured slide to the webhook
+  slideDeleteLocalAfterUpload: false, // free local bytes once Discord confirms
 
   // --- shared
   keepAwake: true,        // stop the display sleeping while monitoring
@@ -64,6 +66,7 @@ export const DEFAULT_STATE = {
   slideCount: 0,
   audioChunks: 0,
   audioNotice: '',        // e.g. mic denied — surfaced, never swallowed
+  slideUploadFailed: false, // so a failing webhook warns once, not once per slide
 };
 
 export async function getSettings() {
