@@ -138,6 +138,7 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
     micIncluded: !!res.micIncluded,
     audioNotice: '',
     slideBlank: false,
+    noFrameSince: 0,
     lastError: '',
   });
 
@@ -197,18 +198,43 @@ async function applySettingsToCapture() {
   return { applied: true };
 }
 
-async function handleHeartbeat({ scanCount, slideCount, audioChunks, frameW, frameH }) {
+async function handleHeartbeat({ scanCount, slideCount, audioChunks, frameW, frameH, stalled }) {
   const state = await getState();
   if (!state.monitoring) return;
-  await setState({
+  // Record the frame size as reported, zeros included. Falling back to the last
+  // non-zero value hid exactly the case worth seeing: the capture is running
+  // but the tab is handing back no picture.
+  const patch = {
     scanCount: scanCount ?? state.scanCount,
     slideCount: slideCount ?? state.slideCount,
     audioChunks: audioChunks ?? state.audioChunks,
     lastScanAt: Date.now(),
     lastHeartbeatAt: Date.now(),
-    frameW: frameW || state.frameW,
-    frameH: frameH || state.frameH,
-  });
+  };
+  if (frameW !== undefined) patch.frameW = frameW || 0;
+  if (frameH !== undefined) patch.frameH = frameH || 0;
+
+  const wantsVideo = state.features?.qr || state.features?.slides;
+  if (wantsVideo && frameW !== undefined) {
+    const hasFrame = !!(frameW && frameH);
+    if (!hasFrame && !state.noFrameSince) patch.noFrameSince = Date.now();
+    if (hasFrame && state.noFrameSince) patch.noFrameSince = 0;
+  }
+  if (stalled === undefined && state.lastError === 'noframes' && frameW && frameH) {
+    patch.lastError = '';
+  }
+  await setState(patch);
+
+  // A minute of nothing is not a hiccup — the tab is not painting for us.
+  const since = patch.noFrameSince ?? state.noFrameSince;
+  if (wantsVideo && since && Date.now() - since > 60_000 && state.lastError !== 'noframes') {
+    await setState({ lastError: 'noframes' });
+    await notifyPlain(
+      'ไม่ได้ภาพจากแท็บ',
+      'capture ทำงานอยู่แต่แท็บไม่ส่งภาพมาเลย — ลองสลับกลับไปที่แท็บประชุม '
+      + 'แล้วให้มันเป็นแท็บที่เห็นอยู่ ถ้ายังไม่ขึ้น ให้หยุดแล้วเริ่มใหม่'
+    );
+  }
 }
 
 /** The capture went black — tell the user what to actually do about it. */
@@ -316,6 +342,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     lastHeartbeatAt: Date.now(),
     slideCount: pong.slideCount ?? state.slideCount,
     audioChunks: pong.audioChunks ?? state.audioChunks,
+    frameW: pong.frameW || 0,
+    frameH: pong.frameH || 0,
   });
 
   // Alive but not producing frames? Say so rather than pretending it's fine.

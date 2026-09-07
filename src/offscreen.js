@@ -342,7 +342,15 @@ async function slideTick() {
 async function checkSlide() {
   const w = video.videoWidth;
   const h = video.videoHeight;
-  if (!w || !h) return;
+  // A 0x0 frame means the tab handed back no picture at all. This used to
+  // return in silence, so "no slides captured" looked identical whether the
+  // screen never changed or no pixels ever arrived. Say which one it is.
+  if (!w || !h) {
+    report('HEARTBEAT', {
+      scanCount, slideCount: slideSeq, audioChunks, frameW: 0, frameH: 0, stalled: true,
+    });
+    return;
+  }
   if (slideSeq >= (settings.maxSlides || 300)) return;
 
   const result = slideDetector.check(video);

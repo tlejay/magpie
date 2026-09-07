@@ -113,7 +113,10 @@ function renderWarning(monitoring, sameTab) {
   const show = (html) => { warn.innerHTML = html; warn.hidden = false; };
 
   // Ordered by urgency: something actively going wrong beats a setup reminder.
-  if (state.slideBlank) {
+  if (state.lastError === 'noframes') {
+    show('ยัง<b>ไม่ได้ภาพจากแท็บเลย</b> — สลับกลับไปให้แท็บประชุมเป็นแท็บที่เห็นอยู่ '
+      + 'ถ้ายังไม่ขึ้น ให้หยุดแล้วเริ่มใหม่');
+  } else if (state.slideBlank) {
     show('ภาพจากแท็บเป็นสีดำ — <b>ปิด Picture-in-Picture</b> แล้วภาพจะกลับมา '
       + 'ระหว่างนี้ไม่บันทึกสไลด์');
   } else if (state.audioNotice) {
@@ -152,6 +155,11 @@ function renderLive(monitoring) {
     if (settings.slidesToDiscord) chips.push([state.slidesUploaded ?? 0, 'ส่งแล้ว']);
   }
   if (state.features?.audio) chips.push([state.audioChunks ?? 0, 'ท่อนเสียง']);
+  // The frame size answers "is it even seeing the tab" without opening a
+  // console — 0×0 and 1280×720 are two completely different problems.
+  if (state.features?.qr || state.features?.slides) {
+    chips.push([state.frameW && state.frameH ? `${state.frameW}×${state.frameH}` : '0×0', 'ภาพ']);
+  }
 
   el('metrics').replaceChildren(...chips.map(([value, label]) => {
     const span = document.createElement('span');
