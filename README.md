@@ -17,7 +17,7 @@ A Chrome extension that watches any meeting tab and keeps the parts worth keepin
 |---|---|
 | 👁 **Watch** | Finds QR codes on screen, alerts you, and pushes the link to Discord |
 | 🔊 **Listen** | A virtual speaker: audio still plays normally while a copy is recorded locally, with your microphone mixed in or kept as a separate file |
-| 🖼 **Collect** | Saves a screenshot every time the slide actually changes, decided by comparing images on your machine — optionally pushing each one to Discord as it happens |
+| 🖼 **Collect** | Saves a screenshot every time the slide actually changes, decided by comparing images on your machine — and pushes each one to Discord as it happens (can be turned off) |
 
 Works with any meeting that runs in a Chrome tab: Zoom web client, Google Meet, Microsoft Teams, Webex, or a livestream. Nothing in it is tied to a particular platform — it reads pixels and audio from the tab you point it at.
 
@@ -201,7 +201,7 @@ git clone https://github.com/tlejay/magpie.git
 
 No build step, no `npm install`, no `node_modules`. Edit a file, hit Reload, done.
 
-### Discord (optional, for the QR alerts)
+### Discord (optional, for QR alerts and slides)
 
 ```
 Discord → Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL

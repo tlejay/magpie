@@ -36,7 +36,7 @@ export const DEFAULT_SETTINGS = {
   stabilityChecks: 1,     // confirming samples before saving
   slideQuality: 0.8,
   maxSlides: 300,
-  slidesToDiscord: false,          // send each captured slide to the webhook
+  slidesToDiscord: true,           // send each captured slide to the webhook — off made the channel look dead
   slideDeleteLocalAfterUpload: false, // free local bytes once Discord confirms
 
   // --- shared

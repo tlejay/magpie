@@ -129,11 +129,23 @@ function renderWarning(monitoring, sameTab) {
     show(`กำลังเฝ้าแท็บอื่นอยู่: <b>${escapeHtml(state.tabTitle || 'ไม่ทราบชื่อ')}</b>`);
   } else if (state.lastError === 'stalled') {
     show('ค้างอยู่ — ไม่ได้ภาพใหม่มาสักพัก ลองหยุดแล้วเริ่มใหม่');
+  } else if (monitoring && !sendsToDiscord()) {
+    // Audio never leaves the machine, so a slides/audio-only session with slide
+    // upload off leaves the Discord channel silent — which reads as "broken".
+    show('ตอนนี้<b>ไม่มีอะไรส่งเข้า Discord</b> — เก็บไว้ในเครื่องอย่างเดียว '
+      + 'เปิด "เฝ้าหา QR" หรือ "ส่งสไลด์เข้า Discord" ใน ⚙ ตั้งค่า');
   } else if (!monitoring && !TOOLS.some((id) => settings[id])) {
     show('เปิดเครื่องมืออย่างน้อยหนึ่งอย่างก่อนถึงจะเริ่มได้');
   } else {
     warn.hidden = true;
   }
+}
+
+/** Whether anything in the running session will be posted to the webhook. */
+function sendsToDiscord() {
+  const qr = settings.enableQr && state.features?.qr;
+  const slides = settings.slidesToDiscord && state.features?.slides;
+  return !!(qr || slides);
 }
 
 function renderLive(monitoring) {

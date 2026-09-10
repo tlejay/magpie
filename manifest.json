@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Magpie",
   "version": "1.2.0",
-  "version_name": "1.2.0 · build 0907-1314",
+  "version_name": "1.2.0 · build 0910-1541",
   "description": "เก็บสิ่งที่การประชุมทิ้งไว้ — เฝ้าหา QR Code, อัดเสียง, จับภาพสไลด์ ใช้ได้กับทุกการประชุมที่เปิดในแท็บ Chrome",
   "minimum_chrome_version": "116",
   "permissions": [
