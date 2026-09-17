@@ -98,6 +98,9 @@ async function proxyToOffscreen(msg) {
 
 async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
   if (!streamId) throw new Error('ไม่ได้ stream id จากแท็บ');
+  // The previous session's ZIP is still downloading out of the offscreen
+  // document. Closing it when that finishes would kill this new capture.
+  await saving;
 
   const settings = await getSettings();
   const features = {
@@ -149,18 +152,85 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
   return { sessionId: res.sessionId, engine: res.engine, recording: res.recording, micIncluded: res.micIncluded };
 }
 
+let saving = Promise.resolve();
+
 async function stopMonitor(reason) {
   let summary = null;
-  if (await hasOffscreen()) {
+  const had = await hasOffscreen();
+  if (had) {
     const res = await sendToOffscreen({ type: 'STOP_CAPTURE' }).catch(() => null);
     summary = res?.summary || null;
-    await closeOffscreen();
   }
   await chrome.alarms.clear(WATCHDOG_ALARM);
   await releaseKeepAwake();
   await resetState();
   await setBadge('');
-  return { reason, summary };
+
+  // Everything is on disk by now, so the stop itself is done — the ZIP is extra.
+  // Keep the offscreen document open until the download has pulled the blob out.
+  let saved = null;
+  if (had) {
+    const job = autoSaveZip(summary?.sessionId);
+    saving = job.catch(() => {});
+    saved = await job;
+    await closeOffscreen();
+  }
+  return { reason, summary, saved };
+}
+
+/**
+ * Save the finished session straight into Downloads/Magpie. Never throws: the
+ * recording is already safe in IndexedDB and the popup can still export it, so
+ * a failed auto-save is a message, not an error.
+ */
+async function autoSaveZip(sessionId) {
+  const settings = await getSettings();
+  if (!settings.autoSaveZip || !sessionId) return null;
+
+  let result;
+  try {
+    const res = await sendToOffscreen({ type: 'EXPORT_ZIP', sessionId });
+    if (!res?.ok) throw new Error(res?.error || 'สร้าง ZIP ไม่สำเร็จ');
+    if (res.skipped) return null;
+
+    const downloadId = await chrome.downloads.download({
+      url: res.url,
+      filename: `Magpie/${res.filename}`,
+      conflictAction: 'uniquify',
+      saveAs: false,
+    });
+    const item = await waitForDownload(downloadId);
+    if (item.state !== 'complete') throw new Error(`ดาวน์โหลดไม่สำเร็จ (${item.error || item.state})`);
+    result = {
+      ok: true, sessionId, at: Date.now(),
+      filename: item.filename || res.filename, bytes: res.stats?.zipBytes || 0,
+    };
+  } catch (err) {
+    result = { ok: false, sessionId, at: Date.now(), error: String(err?.message || err) };
+    await notifyPlain('บันทึก ZIP อัตโนมัติไม่สำเร็จ',
+      `${result.error}\nข้อมูลยังอยู่ครบในเครื่อง — กดไอคอน Magpie แล้วกด "ZIP ทั้งชุด" ได้`);
+  }
+  await chrome.storage.local.set({ lastSave: result });
+  return result;
+}
+
+/** Resolves with the final DownloadItem once it completes or is interrupted. */
+function waitForDownload(id, timeoutMs = 5 * 60_000) {
+  return new Promise((resolve) => {
+    const finish = (item) => {
+      chrome.downloads.onChanged.removeListener(onChanged);
+      clearTimeout(timer);
+      resolve(item);
+    };
+    const check = async () => {
+      const [item] = await chrome.downloads.search({ id });
+      if (item && item.state !== 'in_progress') finish(item);
+    };
+    const onChanged = (delta) => { if (delta.id === id && delta.state) check(); };
+    const timer = setTimeout(() => finish({ state: 'timeout' }), timeoutMs);
+    chrome.downloads.onChanged.addListener(onChanged);
+    check(); // it may already be done — a small blob downloads in milliseconds
+  });
 }
 
 async function applySettingsToCapture() {
@@ -302,11 +372,12 @@ async function handleCaptureLost(reason) {
   const state = await getState();
   if (!state.monitoring) return;
   const wasRecording = state.recording;
-  await stopMonitor(reason);
-  await notifyPlain(
-    'หยุดทำงานแล้ว',
-    `${reason}${wasRecording ? '\nไฟล์เสียงที่อัดไว้ถูกบันทึกไว้แล้ว' : ''}\nกดที่ไอคอน Magpie เพื่อเริ่มใหม่`
-  );
+  const { saved } = await stopMonitor(reason);
+  // A failed auto-save already raised its own notification.
+  const kept = saved?.ok
+    ? `\nบันทึก ZIP ลง Downloads แล้ว (${saved.filename.split(/[\\/]/).pop()})`
+    : (wasRecording ? '\nไฟล์เสียงที่อัดไว้ถูกเก็บไว้ในเครื่องแล้ว' : '');
+  await notifyPlain('หยุดทำงานแล้ว', `${reason}${kept}\nกดที่ไอคอน Magpie เพื่อเริ่มใหม่`);
 }
 
 // The monitored tab going away is the most common way this breaks.

@@ -79,8 +79,8 @@ tab ──┬─(passthrough gain)─→ speakers      ← toggleable, and you p
 mic ───(mic gain)───────┴─→ recorder       ← one mixed file, both sides of the call
 
                     …or, in separate mode:
-tab ───────────────────────→ recorder      ← audio-tab.webm
-mic ───────────────────────→ recorder      ← audio-mic.webm
+tab ───────────────────────→ recorder      ← audio-tab.mp3
+mic ───────────────────────→ recorder      ← audio-mic.mp3
 ```
 
 The microphone is deliberately **never** routed to the speakers. Tab audio into your ears is correct; your own voice fed back into your ears is not.
@@ -162,11 +162,11 @@ Order of decision: **cooldown → deny-list → allow-list → alert.** Cooldown
 
 ## What you get out
 
-Each session exports as one ZIP:
+Press stop and the ZIP lands in **Downloads/Magpie/** on its own — closing the meeting tab does the same. (Options → ทั่วไป turns this off; the popup and the sessions page can still export any session by hand.)
 
 ```
 magpie-2026-09-03-1432/
-├── audio.webm              tab audio + your microphone (or audio-tab / audio-mic if split)
+├── audio.mp3               tab audio + your microphone (or audio-tab / audio-mic if split)
 ├── slides/
 │   ├── 001_00-03-12.jpg    filenames carry the offset into the recording
 │   └── 002_00-07-45.jpg
@@ -183,7 +183,9 @@ magpie-2026-09-03-1432/
 | 00:07:45 | 🖼 สไลด์ 002 — `slides/002_00-07-45.jpg` |
 | 00:14:32 | 🔗 QR — https://forms.gle/aX9kQ2mNpR4vT8wZ |
 
-> A recorder writes its file header before it knows the duration, so audio assembled from streamed chunks reports an unknown length. It plays fine everywhere; if a player refuses to seek, `ffmpeg -i audio.webm -c copy audio-fixed.webm` rewrites the header. The exported `timeline.md` says so too, rather than leaving you to find out.
+**Why MP3, not WebM.** `MediaRecorder` in Chrome only really writes WebM/Opus — it reports `audio/mp4` AAC as supported and then hands back zero bytes. WebM is exactly the format transcription tools and LLM uploads reject most, so an AudioWorklet taps the same signal the recorder hears and encodes **16 kHz mono MP3 at 32 kbps** live (~14 MB an hour, under Whisper's 25 MB limit up to ~1.7 h). Encoding as you go means export never has to decode an hour of audio at once, and MP3 frames join cleanly, so the duration is correct.
+
+The WebM recording is still made alongside as a fallback. It only appears in the ZIP for a track with no MP3 — sessions from older versions, or if the encoder failed to start (the popup says so). WebM assembled from streamed chunks has no duration in its header; `timeline.md` includes the `ffmpeg -i audio.webm -c copy audio-fixed.webm` fix in that case.
 
 ---
 
@@ -306,7 +308,8 @@ src/options.*              every setting
 src/sessions.*             saved sessions: export or delete
 src/permission.*           one-time microphone grant
 src/config.local.js        🔒 your webhook URL (gitignored)
-lib/                       jsqr.js, fflate.min.js — vendored, MV3 forbids CDN loads
+src/shared/pcm-tap.worklet.js  audio thread: mono + 16 kHz for the MP3 encoder
+lib/                       jsqr.js, fflate.min.js, lame.min.js (lamejs 1.2.1, LGPL) — vendored, MV3 forbids CDN loads
 test/                      QR and slide harnesses
 ```
 

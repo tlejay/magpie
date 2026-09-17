@@ -36,6 +36,7 @@ const FIELDS = [
 
   // --- general
   { id: 'keepAwake', kind: 'check' },
+  { id: 'autoSaveZip', kind: 'check' },
   { id: 'maxLog', kind: 'range' },
 ];
 

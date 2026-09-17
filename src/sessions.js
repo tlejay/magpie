@@ -48,7 +48,7 @@ async function card(session) {
 
   const chips = document.createElement('div');
   chips.className = 'chips';
-  addChip(chips, `🔊 เสียง ${counts.chunks} ท่อน`, counts.chunks > 0);
+  addChip(chips, counts.chunks ? `🔊 เสียง${session.mp3Tracks?.length ? ' · MP3' : ' · WebM'}` : '🔊 ไม่มีเสียง', counts.chunks > 0);
   addChip(chips, session.micIncluded ? '🎙 มีไมโครโฟน' : '🎙 ไม่มีไมโครโฟน', !!session.micIncluded);
   addChip(chips, `🖼 สไลด์ ${counts.slides}`, counts.slides > 0);
   addChip(chips, `🔗 QR ${counts.qrHits}`, counts.qrHits > 0);

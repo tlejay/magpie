@@ -13,7 +13,8 @@
 import { createScanner } from './shared/qr.js';
 import { createSlideDetector } from './shared/slides.js';
 import { createAudioPipeline } from './shared/audio.js';
-import { createSession, endSession, putAudioChunk, putSlide, updateSession } from './shared/db.js';
+import { createSession, endSession, putAudioChunk, putSlide, updateSession, getCounts } from './shared/db.js';
+import { buildSessionZip } from './shared/export.js';
 
 const video = document.getElementById('feed');
 const alertSound = document.getElementById('alert');
@@ -64,6 +65,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   switch (msg.type) {
     case 'START_CAPTURE': return async_(() => start(msg));
     case 'STOP_CAPTURE': return async_(() => stop());
+    case 'EXPORT_ZIP': return async_(() => exportZip(msg.sessionId));
 
     case 'PING':
       sendResponse({
@@ -183,9 +185,10 @@ async function start(msg) {
     audio = await createAudioPipeline({
       tabStream: stream,
       settings,
-      onChunk: async (blob, seq, offsetMs, track) => {
-        await putAudioChunk(session.id, seq, blob, offsetMs, track);
-        audioChunks += 1;
+      onChunk: async (blob, seq, offsetMs, track, format) => {
+        await putAudioChunk(session.id, seq, blob, offsetMs, track, format);
+        // The popup counter tracks the WebM recorder; the MP3 copy would double it.
+        if (format !== 'mp3') audioChunks += 1;
       },
       onNotice: (code, detail) => report('AUDIO_NOTICE', { code, detail }),
     });
@@ -194,6 +197,7 @@ async function start(msg) {
       micIncluded: audio.micIncluded,
       audioLayout: audio.layout,
       audioTracks: audio.tracks,
+      mp3Tracks: audio.mp3Tracks,
     });
   }
 
@@ -248,6 +252,20 @@ async function stop() {
   slideSeq = 0;
   audioChunks = 0;
   return { summary: finished };
+}
+
+/**
+ * Build the ZIP here and hand back a blob: URL. The service worker has no DOM
+ * to build it in, and the popup may be closed by the time a session ends (the
+ * meeting tab closing is the usual way). chrome.downloads can fetch a blob: URL
+ * from this document — as long as this document stays open until it finishes.
+ */
+async function exportZip(sessionId) {
+  const counts = await getCounts(sessionId);
+  // A QR-only session has nothing worth a file; its results live in the popup.
+  if (!counts.chunks && !counts.slides) return { skipped: true };
+  const { blob, filename, stats } = await buildSessionZip(sessionId);
+  return { url: URL.createObjectURL(blob), filename, stats };
 }
 
 function applyConfig(config) {

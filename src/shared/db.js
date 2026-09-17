@@ -10,7 +10,7 @@ const DB_VERSION = 1;
 
 export const STORE = {
   SESSIONS: 'sessions',
-  CHUNKS: 'chunks',   // audio, one record per MediaRecorder timeslice
+  CHUNKS: 'chunks',   // audio, one record per timeslice — WebM and MP3 side by side, told apart by `format`
   SLIDES: 'slides',
   QR_HITS: 'qrHits',
 };
@@ -128,8 +128,8 @@ async function append(storeName, record) {
   return key;
 }
 
-export function putAudioChunk(sessionId, seq, blob, offsetMs, track = 'mix') {
-  return append(STORE.CHUNKS, { sessionId, seq, blob, offsetMs, track, ts: Date.now() });
+export function putAudioChunk(sessionId, seq, blob, offsetMs, track = 'mix', format = 'webm') {
+  return append(STORE.CHUNKS, { sessionId, seq, blob, offsetMs, track, format, ts: Date.now() });
 }
 
 export function putSlide(sessionId, seq, blob, offsetMs, meta = {}) {
@@ -177,14 +177,17 @@ async function bySession(storeName, sessionId) {
 }
 
 /**
- * Audio chunks, ordered by track then sequence. With separate tab/mic files the
- * two tracks interleave in the store, and concatenating them in insertion order
- * would produce two corrupt files instead of two good ones.
+ * Audio chunks, ordered by format, track, then sequence. Tracks and formats
+ * interleave in the store, and concatenating them in insertion order would
+ * produce corrupt files instead of good ones. Rows from before MP3 existed
+ * have no `format` and are WebM.
  */
 export async function getAudioChunks(sessionId) {
   const rows = await bySession(STORE.CHUNKS, sessionId);
   return rows.sort((a, b) =>
-    (a.track || 'mix').localeCompare(b.track || 'mix') || a.seq - b.seq);
+    (a.format || 'webm').localeCompare(b.format || 'webm')
+    || (a.track || 'mix').localeCompare(b.track || 'mix')
+    || a.seq - b.seq);
 }
 export const getSlides = (sessionId) => bySession(STORE.SLIDES, sessionId);
 export const getQrHits = (sessionId) => bySession(STORE.QR_HITS, sessionId);

@@ -45,6 +45,7 @@ async function init() {
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (changes.state || changes.log || changes.settings)) render();
+    if (area === 'local' && changes.lastSave) render();
   });
 
   await refreshLastSession();
@@ -219,6 +220,26 @@ function renderDone(monitoring) {
   el('doneWhen').textContent = lastSession.tabTitle ? ` · ${trim(lastSession.tabTitle, 22)}` : '';
   el('dlAudio').disabled = !c.chunks;
   el('dlZip').disabled = !(c.chunks || c.slides || c.qrHits);
+  renderSaved();
+}
+
+/** Where the auto-saved ZIP went — or why it didn't — for the session shown. */
+async function renderSaved() {
+  const node = el('doneStatus');
+  // Don't talk over a manual download that is reporting its own progress.
+  if (node.dataset.busy === '1') return;
+  const { lastSave } = await chrome.storage.local.get('lastSave');
+  if (!lastSave || lastSave.sessionId !== lastSession?.id) {
+    if (node.dataset.auto === '1') { node.textContent = ''; node.dataset.auto = ''; }
+    return;
+  }
+  node.dataset.auto = '1';
+  if (lastSave.ok) {
+    const name = lastSave.filename.split(/[\\/]/).pop();
+    setStatus(`✅ บันทึกแล้ว: Downloads/Magpie/${name} · ${mb(lastSave.bytes)}`, true);
+  } else {
+    setStatus(`❌ บันทึกอัตโนมัติไม่สำเร็จ — กด ZIP ทั้งชุด (${trim(lastSave.error, 50)})`, false);
+  }
 }
 
 function renderLog(log, monitoring) {
@@ -297,7 +318,9 @@ async function onToggle() {
   el('msg').textContent = '';
   try {
     if (state.monitoring) {
+      if (settings.autoSaveZip) el('msg').textContent = 'กำลังบันทึก ZIP…';
       await send({ type: 'STOP_MONITOR' });
+      el('msg').textContent = '';
       // This block is the answer to "where did the audio go" — fill it in the
       // instant the user stops, not on the next popup open.
       await refreshLastSession();
@@ -325,6 +348,8 @@ async function onToggle() {
 async function downloadLast(kind) {
   if (!lastSession) return;
   [el('dlAudio'), el('dlZip')].forEach((b) => { b.disabled = true; });
+  el('doneStatus').dataset.busy = '1';
+  el('doneStatus').dataset.auto = '';
   el('doneBar').hidden = false;
   setProgress(0.1);
   setStatus('กำลังเตรียมไฟล์…', null);
@@ -351,6 +376,7 @@ async function downloadLast(kind) {
 
   el('doneBar').hidden = true;
   setProgress(0);
+  el('doneStatus').dataset.busy = '';
   renderDone(false);
 }
 

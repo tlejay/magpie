@@ -217,6 +217,16 @@
     </div>
     <p class="hint">จอหลับ = หน้าประชุมหยุดวาดภาพ = สแกนไปก็เจอแต่เฟรมค้าง</p>
 
+    <div class="check">
+      <input id="autoSaveZip" type="checkbox">
+      <label for="autoSaveZip">กดหยุดแล้วบันทึก ZIP ลงเครื่องทันที</label>
+    </div>
+    <p class="hint">
+      ไฟล์ไปอยู่ที่ <b>Downloads/Magpie/</b> — ในนั้นมีเสียงเป็น <b>MP3</b> (16 kHz mono เอาไปถอดความด้วย AI ได้เลย),
+      ภาพสไลด์ทั้งหมด และ <code>timeline.md</code> บอกว่าสไลด์ไหนขึ้นนาทีที่เท่าไร<br>
+      ทำงานตอนแท็บประชุมถูกปิดด้วย · ถ้าบันทึกแค่ QR อย่างเดียวจะไม่สร้างไฟล์
+    </p>
+
     <label for="maxLog">เก็บประวัติ QR ย้อนหลัง <b id="maxLogLabel">50</b> รายการ</label>
     <input id="maxLog" type="range" min="10" max="200" step="10">
 

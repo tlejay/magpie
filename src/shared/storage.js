@@ -41,6 +41,7 @@ export const DEFAULT_SETTINGS = {
 
   // --- shared
   keepAwake: true,        // stop the display sleeping while monitoring
+  autoSaveZip: true,      // drop the ZIP into Downloads/Magpie the moment a session ends
 };
 
 export const DEFAULT_STATE = {

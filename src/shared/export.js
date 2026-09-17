@@ -43,6 +43,40 @@ function audioExtension(mimeType) {
 }
 
 /**
+ * One entry per track, MP3 preferred. WebM is used only for a track with no
+ * MP3 — sessions recorded before the MP3 tap existed, or where it failed to
+ * start. Handing over both would just double the download for no gain.
+ *
+ * @returns {Array<{track: string, format: 'mp3'|'webm', blob: Blob, ext: string, chunks: number}>}
+ */
+function assembleAudio(session, chunks) {
+  const groups = new Map(); // track -> { mp3: [], webm: [] }
+  for (const c of chunks) {
+    const track = c.track || 'mix';
+    const format = c.format === 'mp3' ? 'mp3' : 'webm';
+    if (!groups.has(track)) groups.set(track, { mp3: [], webm: [] });
+    groups.get(track)[format].push(c);
+  }
+
+  const out = [];
+  for (const [track, g] of groups) {
+    if (g.mp3.length) {
+      out.push({
+        track, format: 'mp3', ext: 'mp3', chunks: g.mp3.length,
+        blob: new Blob(g.mp3.map((c) => c.blob), { type: 'audio/mpeg' }),
+      });
+    } else if (g.webm.length) {
+      const type = session.audioMimeType || 'audio/webm';
+      out.push({
+        track, format: 'webm', ext: audioExtension(session.audioMimeType), chunks: g.webm.length,
+        blob: new Blob(g.webm.map((c) => c.blob), { type }),
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * Just the audio, no ZIP. Getting the recording out is the most common thing
  * anyone wants right after stopping, and making them build a whole archive for
  * it is friction for no reason.
@@ -54,21 +88,12 @@ export async function buildAudioFiles(sessionId) {
   if (!session) throw new Error('ไม่พบ session นี้');
   if (!chunks.length) return [];
 
-  const ext = audioExtension(session.audioMimeType);
-  const type = session.audioMimeType || 'audio/webm';
   const base = sessionFolderName(session);
-
-  const byTrack = new Map();
-  for (const c of chunks) {
-    const track = c.track || 'mix';
-    if (!byTrack.has(track)) byTrack.set(track, []);
-    byTrack.get(track).push(c);
-  }
-
-  return [...byTrack].map(([track, list]) => ({
-    track,
-    blob: new Blob(list.map((c) => c.blob), { type }),
-    filename: track === 'mix' ? `${base}.${ext}` : `${base}-${track}.${ext}`,
+  return assembleAudio(session, chunks).map((a) => ({
+    track: a.track,
+    format: a.format,
+    blob: a.blob,
+    filename: a.track === 'mix' ? `${base}.${a.ext}` : `${base}-${a.track}.${a.ext}`,
   }));
 }
 
@@ -83,30 +108,22 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
   if (!session) throw new Error('ไม่พบ session นี้');
 
   const folder = sessionFolderName(session);
-  const ext = audioExtension(session.audioMimeType);
   const tree = {};
 
-  // --- audio: one file per track, chunks concatenated in the order the
-  // recorder produced them. A 'mixed' session has a single 'mix' track;
-  // a 'separate' session has 'tab' and 'mic'.
+  // --- audio: one file per track, chunks concatenated in the order they were
+  // produced. A 'mixed' session has a single 'mix' track; a 'separate' session
+  // has 'tab' and 'mic'.
   let audioBytes = 0;
   const audioFiles = [];
   if (chunks.length) {
     onProgress('กำลังประกอบไฟล์เสียง', 0.2);
-    const byTrack = new Map();
-    for (const c of chunks) {
-      const track = c.track || 'mix';
-      if (!byTrack.has(track)) byTrack.set(track, []);
-      byTrack.get(track).push(c);
-    }
-    for (const [track, list] of byTrack) {
-      const blob = new Blob(list.map((c) => c.blob), { type: session.audioMimeType || 'audio/webm' });
-      const u8 = await blobToU8(blob);
+    for (const a of assembleAudio(session, chunks)) {
+      const u8 = await blobToU8(a.blob);
       audioBytes += u8.length;
-      const name = track === 'mix' ? `audio.${ext}` : `audio-${track}.${ext}`;
+      const name = a.track === 'mix' ? `audio.${a.ext}` : `audio-${a.track}.${a.ext}`;
       // Already-compressed media — storing beats deflating on both speed and size.
       tree[name] = [u8, { level: 0 }];
-      audioFiles.push({ name, track, bytes: u8.length, chunks: list.length });
+      audioFiles.push({ name, track: a.track, format: a.format, bytes: u8.length, chunks: a.chunks });
     }
   }
 
@@ -146,7 +163,7 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
       audioMimeType: session.audioMimeType,
       audioLayout: session.audioLayout || 'mixed',
       micIncluded: session.micIncluded,
-      audioFiles: audioFiles.map((f) => ({ file: f.name, source: f.track, bytes: f.bytes })),
+      audioFiles: audioFiles.map((f) => ({ file: f.name, source: f.track, format: f.format, bytes: f.bytes })),
     },
     slides: slides.map((s, i) => ({
       seq: i + 1,
@@ -226,12 +243,15 @@ function buildTimeline(session, meta, { audioFiles }) {
   }
   lines.push('');
 
-  if (audioFiles.length) {
+  // Only WebM carries the missing-duration quirk. MP3 is 16 kHz mono, ready
+  // to hand straight to a transcription model.
+  const webmFiles = audioFiles.filter((f) => f.format !== 'mp3');
+  if (webmFiles.length) {
     lines.push('> ตัวอัดเสียงเขียนหัวไฟล์ตั้งแต่ก่อนรู้ความยาว ไฟล์จึงไม่มีข้อมูลความยาวติดมา');
     lines.push('> เปิดฟังได้ปกติ แต่ถ้าโปรแกรมไหนเลื่อนเวลาไม่ได้ ให้เขียนหัวไฟล์ใหม่ด้วยคำสั่งนี้ก่อน:');
     lines.push('>');
     lines.push('> ```bash');
-    for (const f of audioFiles) {
+    for (const f of webmFiles) {
       lines.push(`> ffmpeg -i ${f.name} -c copy fixed-${f.name}`);
     }
     lines.push('> ```');

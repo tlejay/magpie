@@ -10,7 +10,7 @@ Chrome extension (Manifest V3) เก็บของจากการประ�
 แก้ไฟล์ → กด Reload ที่ `chrome://extensions` → เห็นผลทันที
 อย่าเพิ่ม TypeScript / bundler / framework โดยไม่ถาม Tle ก่อน
 
-`lib/` เก็บ dependency แบบ vendored (`jsqr.js`, `fflate.min.js`) เพราะ **MV3 ห้ามโหลด script จากเน็ตตอน runtime**
+`lib/` เก็บ dependency แบบ vendored (`jsqr.js`, `fflate.min.js`, `lame.min.js`) เพราะ **MV3 ห้ามโหลด script จากเน็ตตอน runtime**
 
 ## สถาปัตยกรรม
 
@@ -39,7 +39,9 @@ popup ─(getMediaStreamId ใน user gesture)→ service-worker ─(createDocu
 6. **ห้ามใช้ inline `<script>` หรือ `onclick=`** — MV3 CSP บล็อก
 7. **แต่ละ analyzer ต้องมี canvas ของตัวเอง** — QR decode เป็น async ถ้าใช้ canvas ร่วมกับ
    slide check จะอ่านพิกเซลทับกัน
-8. **ห้ามเดาแทนผู้ใช้ในข้อความแจ้งเตือน** — เคยเขียนว่า "เปิดแบบสอบถาม" แล้วผิดตั้งแต่ครั้งแรก
+8. **MP3 tap (AudioWorklet) ต้องมี `numberOfOutputs: 0`** — Chrome ดึงข้อมูลเองโดยไม่ต้องต่อเข้า
+   `ctx.destination` ถ้าให้มี output แล้วต่อออกลำโพง ไมค์จะหลุดไปลำโพงผิดกฎข้อ 3
+9. **ห้ามเดาแทนผู้ใช้ในข้อความแจ้งเตือน** — เคยเขียนว่า "เปิดแบบสอบถาม" แล้วผิดตั้งแต่ครั้งแรก
    ที่ยิงจริง (ปลายทางเป็นลิงก์ LINE) บอกแค่สิ่งที่รู้จริง: เจอ QR + โดเมนคืออะไร
 
 ## ตัวเลขที่วัดมาแล้ว (อย่าเดาใหม่)
@@ -67,6 +69,14 @@ popup ─(getMediaStreamId ใน user gesture)→ service-worker ─(createDocu
 ช่องว่างระหว่าง noise กับ signal ราว 35 เท่า — threshold 20% จึงมีที่เหลือเยอะทั้งสองทาง
 **นี่คือเหตุผลที่วัดเป็น "สัดส่วนช่องที่เปลี่ยน" ไม่ใช่ผลต่างพิกเซลรวม** ถ้าเปลี่ยนไปวัดแบบหลัง
 กล้องวิทยากรจะทำให้จับรัวทันที
+
+**เสียง** (ทดสอบ 17 ก.ย. 2569 · Chrome 152 macOS)
+
+- `MediaRecorder.isTypeSupported('audio/mp4;codecs=mp4a.40.2')` ตอบ `true` **แต่ได้ 0 byte จริง** (ทั้ง headless และเปิดหน้าต่าง) → อย่าหวังพึ่ง AAC
+- lamejs เข้ารหัส 16 kHz mono ได้เร็วราว 40 เท่าของเวลาจริง → encode สดใน offscreen ได้สบาย
+- MP3 ที่ต่อจาก chunk ได้ duration ตรง (7 วิ → 7.02 วิ) · ZIP ใช้ MP3 ก่อน WebM เสมอ
+- `chrome.downloads.download()` จาก service worker ดึง `blob:` URL ที่สร้างใน extension page อื่นได้ —
+  แต่ page นั้นต้องเปิดอยู่จนโหลดเสร็จ `stopMonitor()` จึงรอ `autoSaveZip()` ก่อน `closeOffscreen()`
 
 ## จุดที่พังบ่อยและวิธีตรวจ
 
