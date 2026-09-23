@@ -143,6 +143,24 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
   }
   if (Object.keys(slideFiles).length) tree.slides = slideFiles;
 
+  // --- QR frames: the whole picture the code was read from. A bare URL in the
+  // timeline is impossible to place months later; the slide it sat on is not.
+  // Rows recorded before this existed have no blob and simply have no file.
+  onProgress('กำลังใส่ภาพ QR', 0.65);
+  const qrFiles = {};
+  const qrNames = [];
+  let qrBytes = 0;
+  for (const [i, hit] of qrHits.entries()) {
+    if (!hit.blob) { qrNames.push(null); continue; }
+    const stamp = hit.offsetMs != null ? fileStamp(hit.offsetMs) : 'unknown';
+    const name = `${String(i + 1).padStart(3, '0')}_${stamp}.jpg`;
+    const u8 = await blobToU8(hit.blob);
+    qrBytes += u8.length;
+    qrFiles[name] = [u8, { level: 0 }];
+    qrNames.push(name);
+  }
+  if (Object.keys(qrFiles).length) tree.qr = qrFiles;
+
   // --- machine-readable side-car
   onProgress('กำลังเขียนสารบัญ', 0.8);
   const meta = {
@@ -167,11 +185,12 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
       discordUrl: s.discordUrl || null,
       changeRatio: s.ratio ?? null,
     })),
-    qrCodes: qrHits.map((q) => ({
+    qrCodes: qrHits.map((q, i) => ({
       offsetMs: q.offsetMs,
       at: q.offsetMs != null ? formatOffset(q.offsetMs) : null,
       text: q.text,
       url: q.url,
+      file: qrNames[i] ? `qr/${qrNames[i]}` : null,
     })),
   };
   tree['session.json'] = fflate().strToU8(JSON.stringify(meta, null, 2));
@@ -193,6 +212,8 @@ export async function buildSessionZip(sessionId, onProgress = () => {}) {
       slides: slides.length,
       slidesOnDiscordOnly,
       qrHits: qrHits.length,
+      qrImages: Object.keys(qrFiles).length,
+      qrBytes,
       audioChunks: chunks.length,
       audioFiles: audioFiles.length,
       audioBytes,
@@ -211,7 +232,11 @@ function buildTimeline(session, meta, { audioFiles }) {
       text: `🖼 สไลด์ ${String(s.seq).padStart(3, '0')} — `
         + (s.file ? `\`${s.file}\`` : (s.discordUrl ? `[ดูใน Discord](${s.discordUrl})` : '_ไม่มีไฟล์_')),
     })),
-    ...meta.qrCodes.map((q) => ({ offsetMs: q.offsetMs ?? 0, kind: 'qr', text: `🔗 QR — ${q.url || q.text}` })),
+    ...meta.qrCodes.map((q) => ({
+      offsetMs: q.offsetMs ?? 0,
+      kind: 'qr',
+      text: `🔗 QR — ${q.url || q.text}${q.file ? ` · \`${q.file}\`` : ''}`,
+    })),
   ].sort((a, b) => a.offsetMs - b.offsetMs);
 
   const lines = [];
@@ -229,7 +254,9 @@ function buildTimeline(session, meta, { audioFiles }) {
     lines.push(`- **ไฟล์เสียง:** \`${f.name}\` (${SOURCE_LABEL[f.track] || f.track})`);
   }
   const onDiscordOnly = meta.slides.filter((s) => !s.file).length;
-  lines.push(`- **สไลด์:** ${meta.slides.length} ภาพ · **QR:** ${meta.qrCodes.length} รายการ`);
+  const qrWithFrame = meta.qrCodes.filter((q) => q.file).length;
+  lines.push(`- **สไลด์:** ${meta.slides.length} ภาพ · **QR:** ${meta.qrCodes.length} รายการ`
+    + (qrWithFrame ? ` (มีภาพหน้าจอ ${qrWithFrame} ภาพใน \`qr/\`)` : ''));
   if (onDiscordOnly) {
     lines.push(`- ⚠️ **${onDiscordOnly} ภาพไม่ได้อยู่ใน ZIP นี้** — ถูกส่งขึ้น Discord แล้วลบสำเนาในเครื่องทิ้ง`);
     lines.push('  ลิงก์ CDN ของ Discord หมดอายุประมาณ 24 ชม. แต่ตัวไฟล์ยังอยู่ในข้อความ');

@@ -359,7 +359,10 @@ async function scanForQr() {
     return;
   }
 
-  const snapshot = settings.attachSnapshot ? await toDataUrl(qrCanvas, 1280, 0.75) : null;
+  // Built whether or not Discord is getting a copy: this frame is the only
+  // evidence of what the code was actually sitting on, and the ZIP keeps it.
+  // The worker decides separately whether to attach it to the webhook.
+  const snapshot = await toDataUrl(qrCanvas, 1280, 0.75);
   const thumb = await toDataUrl(qrCanvas, 480, 0.55);
 
   report('QR_FOUND', {

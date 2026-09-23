@@ -555,6 +555,10 @@ async function handleQrFound({ values, pass, scanCount, frameW, frameH, snapshot
   const toAlert = fresh.slice(0, MAX_ALERTS_PER_SCAN);
   for (const value of toAlert) await markSeen(value, now);
 
+  // Converted once, not per code: several QRs on one slide were read from the
+  // same frame.
+  const frame = dataUrlToBlob(snapshot);
+
   if (settings.soundEnabled) {
     await sendToOffscreen({ type: 'PLAY_SOUND', volume: settings.volume }).catch(() => {});
   }
@@ -573,8 +577,9 @@ async function handleQrFound({ values, pass, scanCount, frameW, frameH, snapshot
 
     // Also record it against the session so it lands on the exported timeline.
     if (state.sessionId) {
-      const stored = await putQrHit(state.sessionId, { text: value, url, offsetMs: offsetMs ?? null, pass })
-        .then(() => true).catch(() => false);
+      const stored = await putQrHit(state.sessionId, {
+        text: value, url, offsetMs: offsetMs ?? null, pass, blob: frame,
+      }).then(() => true).catch(() => false);
       if (stored) await setState({ qrSaved: (await getState()).qrSaved + 1 });
     }
 
@@ -841,6 +846,7 @@ function domainOf(url) {
 }
 
 function dataUrlToBlob(dataUrl) {
+  if (!dataUrl) return null; // no picture is a missing file, not a failure
   const [head, b64] = dataUrl.split(',');
   const mime = (head.match(/:(.*?);/) || [, 'image/jpeg'])[1];
   const bin = atob(b64);

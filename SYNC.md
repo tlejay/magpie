@@ -50,6 +50,17 @@ IndexedDB **218 MB** และ `chrome.storage.local` log **2.2 MB** จาก�
 รัน service-worker ใน node ด้วย chrome stub ยิง heartbeat 720 ครั้งแล้วนับจำนวน `storage.local.set`
 · headless Chrome เปิด popup/offscreen พร้อม stub เพื่อดูว่าอะไรถูกโหลดจริง
 
+## รอบ 23 ก.ย. (ต่อ) — ภาพ QR เข้า ZIP แล้ว
+
+Tle ถามว่าเอาภาพที่แคปเจอร์ได้ใส่ ZIP ด้วยได้ไหม — สไลด์อยู่ใน `slides/` อยู่แล้ว
+แต่ภาพเฟรมตอนเจอ QR เดิมสร้างขึ้นเพื่อส่ง Discord แล้วทิ้ง ตอนนี้เก็บลงแถว `qrHits`
+แล้วออกมาเป็น `qr/001_00-02-05.jpg` ใน ZIP พร้อมอ้างใน `timeline.md` และ `session.json`
+
+- offscreen สร้างภาพ 1280px เสมอ (เดิมสร้างเฉพาะตอนเปิด "แนบภาพไป Discord")
+  · การตัดสินใจว่าจะแนบไป Discord ไหมยังอยู่ที่ service worker เหมือนเดิม
+- เก็บเฉพาะ QR ที่ผ่าน cooldown/filter แล้วจริง ๆ (ในลูป `toAlert`) แปลง data URL → Blob ครั้งเดียวต่อเฟรม
+- แถวเก่าที่ไม่มีภาพ → `file: null` ไม่พัง
+
 ## งานค้าง
 
 | ใคร | issue | เรื่อง |

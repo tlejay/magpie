@@ -170,6 +170,8 @@ magpie-2026-09-03-1432/
 ├── slides/
 │   ├── 001_00-03-12.jpg    filenames carry the offset into the recording
 │   └── 002_00-07-45.jpg
+├── qr/
+│   └── 001_00-14-32.jpg    the frame each QR was read from
 ├── qr-codes.json
 ├── session.json
 └── timeline.md             ← the part that makes it navigable
@@ -181,7 +183,9 @@ magpie-2026-09-03-1432/
 |------|----------|
 | 00:03:12 | 🖼 สไลด์ 001 — `slides/001_00-03-12.jpg` |
 | 00:07:45 | 🖼 สไลด์ 002 — `slides/002_00-07-45.jpg` |
-| 00:14:32 | 🔗 QR — https://forms.gle/aX9kQ2mNpR4vT8wZ |
+| 00:14:32 | 🔗 QR — https://forms.gle/aX9kQ2mNpR4vT8wZ · `qr/001_00-14-32.jpg` |
+
+A bare URL is hard to place months later, so the whole frame the code was read from is kept next to it — the slide it was on says what the link was actually for. The picture is saved whether or not it was sent to Discord; sessions recorded before this feature have the link with no file.
 
 **Why MP3, not WebM.** `MediaRecorder` in Chrome only really writes WebM/Opus — it reports `audio/mp4` AAC as supported and then hands back zero bytes. WebM is exactly the format transcription tools and LLM uploads reject most, so an AudioWorklet taps the same signal the recorder hears and encodes **16 kHz mono MP3 at 32 kbps** live (~14 MB an hour, under Whisper's 25 MB limit up to ~1.7 h). Encoding as you go means export never has to decode an hour of audio at once, and MP3 frames join cleanly, so the duration is correct.
 
