@@ -65,7 +65,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   switch (msg.type) {
     case 'START_CAPTURE': return async_(() => start(msg));
     case 'STOP_CAPTURE': return async_(() => stop());
-    case 'EXPORT_ZIP': return async_(() => exportZip(msg.sessionId));
+    case 'EXPORT_ZIP': return async_(async () => {
+      await loadLib('fflate.min.js');
+      return exportZip(msg.sessionId);
+    });
 
     case 'PING':
       sendResponse({
@@ -111,6 +114,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
+// ---------------------------------------------------------------- lib loading
+
+// MV3 forbids fetching code off the network, but these bundles ship inside the
+// extension — the cost is parse time, not download. Loading all three up front
+// made a QR-only session pay for the MP3 encoder and a slides-only session pay
+// for both. Each file is injected at most once and the promise is shared.
+const libLoads = new Map();
+
+function loadLib(file) {
+  if (!libLoads.has(file)) {
+    libLoads.set(file, new Promise((resolve, reject) => {
+      const tag = document.createElement('script');
+      tag.src = `../lib/${file}`;
+      tag.onload = () => resolve();
+      tag.onerror = () => { libLoads.delete(file); reject(new Error(`โหลด ${file} ไม่สำเร็จ`)); };
+      document.head.append(tag);
+    }));
+  }
+  return libLoads.get(file);
+}
+
 // ---------------------------------------------------------------- lifecycle
 
 async function start(msg) {
@@ -128,6 +152,9 @@ async function start(msg) {
   }
 
   const wantsVideo = features.qr || features.slides;
+  // Started here, awaited just before the pipeline is built: the parse overlaps
+  // with getUserMedia instead of queueing behind it.
+  const encoderReady = features.audio ? loadLib('lame.min.js') : Promise.resolve();
   const constraints = { audio: false, video: false };
 
   if (wantsVideo) {
@@ -174,7 +201,7 @@ async function start(msg) {
   });
 
   if (features.qr) {
-    scanner = await createScanner();
+    scanner = await createScanner({ loadFallback: () => loadLib('jsqr.js') });
     scheduleQr(1000); // look almost immediately, then settle into the interval
   }
   if (features.slides) {
@@ -182,6 +209,7 @@ async function start(msg) {
     scheduleSlide(1500);
   }
   if (features.audio) {
+    await encoderReady;
     audio = await createAudioPipeline({
       tabStream: stream,
       settings,

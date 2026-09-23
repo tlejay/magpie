@@ -13,6 +13,15 @@ const OFFSCREEN_PATH = 'src/offscreen.html';
 const WATCHDOG_ALARM = 'magpie-watchdog';
 const WATCHDOG_MINUTES = 2;
 const MAX_ALERTS_PER_SCAN = 3; // a slide full of QRs shouldn't produce a wall of popups
+const LIVE_PORT = 'magpie-live';
+
+// The counters in `state` are a progress readout, not a record — the real
+// numbers are in IndexedDB and are recomputed at stop. Persisting them on every
+// 10 s heartbeat rewrote the whole blob each time: 3,017 writes and a 2.2 MB
+// storage log on one profile. An open popup gets them down the live port
+// instead, and storage keeps a checkpoint once a minute.
+const PROGRESS_PERSIST_MS = 60_000;
+let progressWrittenAt = 0;
 
 // ---------------------------------------------------------------- lifecycle
 
@@ -56,6 +65,31 @@ async function seedWebhookFromLocalConfig() {
     }
   } catch {
     // No local config — the user will fill it in on the options page.
+  }
+}
+
+// ---------------------------------------------------------------- live updates
+
+// A popup connects this while a session is running and gets the progress
+// numbers pushed straight to it, so they can stay off disk between checkpoints.
+const livePorts = new Set();
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== LIVE_PORT) return;
+  livePorts.add(port);
+  port.onDisconnect.addListener(() => livePorts.delete(port));
+  getState().then((state) => postLive(port, state)).catch(() => {});
+});
+
+function pushLive(state) {
+  for (const port of livePorts) postLive(port, state);
+}
+
+function postLive(port, state) {
+  try {
+    port.postMessage({ type: 'STATE', state });
+  } catch {
+    livePorts.delete(port); // popup closed between the check and the send
   }
 }
 
@@ -149,6 +183,7 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
     lastError: '',
   });
 
+  progressWrittenAt = Date.now();
   if (settings.keepAwake) await requestKeepAwake();
   await chrome.alarms.create(WATCHDOG_ALARM, { periodInMinutes: WATCHDOG_MINUTES });
   await refreshBadge();
@@ -309,9 +344,12 @@ async function handleHeartbeat({ scanCount, slideCount, audioChunks, frameW, fra
     scanCount: scanCount ?? state.scanCount,
     slideCount: slideCount ?? state.slideCount,
     audioChunks: audioChunks ?? state.audioChunks,
-    lastScanAt: Date.now(),
     lastHeartbeatAt: Date.now(),
   };
+  // lastScanAt means "a QR scan actually ran" — the watchdog's stall check reads
+  // it. Stamping it on every heartbeat, scan or no scan, made that check
+  // unfireable: it could never see a gap.
+  if (scanCount !== undefined && scanCount !== state.scanCount) patch.lastScanAt = Date.now();
   if (frameW !== undefined) patch.frameW = frameW || 0;
   if (frameH !== undefined) patch.frameH = frameH || 0;
 
@@ -324,7 +362,19 @@ async function handleHeartbeat({ scanCount, slideCount, audioChunks, frameW, fra
   if (stalled === undefined && state.lastError === 'noframes' && frameW && frameH) {
     patch.lastError = '';
   }
-  await setState(patch);
+
+  pushLive({ ...state, ...patch });
+
+  // Anything that changes what the popup *says* goes to disk at once; plain
+  // counters wait for the checkpoint. Nothing is lost if the worker dies in
+  // between — the next heartbeat carries absolute values, not increments.
+  const material = patch.noFrameSince !== undefined
+    || patch.lastError !== undefined
+    || !!patch.frameW !== !!state.frameW;
+  if (material || Date.now() - progressWrittenAt >= PROGRESS_PERSIST_MS) {
+    progressWrittenAt = Date.now();
+    await setState(patch);
+  }
 
   // A minute of nothing is not a hiccup — the tab is not painting for us.
   const since = patch.noFrameSince ?? state.noFrameSince;

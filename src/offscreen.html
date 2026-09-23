@@ -10,9 +10,9 @@
   <video id="feed" autoplay muted playsinline></video>
   <audio id="alert" src="../assets/alert.wav" preload="auto"></audio>
 
-  <script src="../lib/jsqr.js"></script>
-  <script src="../lib/lame.min.js"></script>
-  <script src="../lib/fflate.min.js"></script>
+  <!-- The three bundles in lib/ total 445 KB and used to be parsed here on
+       every capture, whichever tools were armed. offscreen.js pulls in only the
+       ones the session needs — see loadLib(). -->
   <script type="module" src="offscreen.js"></script>
 </body>
 </html>

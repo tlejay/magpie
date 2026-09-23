@@ -35,8 +35,20 @@ IndexedDB **218 MB** และ `chrome.storage.local` log **2.2 MB** จาก�
 ยืนยันแล้วด้วย harness stub + headless Chrome: เปิด popup แล้ว `indexedDB.open` ไม่ถูกเรียก
 และ fflate ไม่ถูกโหลด · โปรไฟล์ที่ไม่มีสรุปเรียก IDB จริงตามที่ตั้งใจ
 
-**ยังไม่ได้ทำ** (ข้อ 4-5 จากที่วิเคราะห์ไว้): ลดการเขียนคีย์ `state` ที่ถี่เกิน (ตัวนับ heartbeat/chunk
-เขียน object ทั้งใบทุก 5 วิ) และให้ offscreen โหลด jsqr/lame เฉพาะฟีเจอร์ที่เปิดจริง (ตอนนี้โหลดครบ 445 KB ทุกครั้ง)
+ทำต่ออีก 2 ข้อในวันเดียวกัน:
+
+4. **เขียน `state` น้อยลง 6 เท่า** — heartbeat ทุก 10 วิ ไม่เขียนลง storage แล้ว
+   popup ที่เปิดอยู่รับเลขสดผ่าน port `magpie-live` (ต่อเฉพาะตอน monitoring เท่านั้น
+   เพราะการต่อ port จะปลุก service worker — ซึ่งคือสิ่งที่เพิ่งแก้ไป) · storage เก็บ checkpoint นาทีละครั้ง
+   · `setState()` ข้ามการเขียนที่ไม่มีอะไรเปลี่ยนด้วย · วัดแล้ว: ประชุม 2 ชม. 720 → 120 ครั้ง
+   · ผลพลอยได้: แก้บั๊กที่ heartbeat ปั๊ม `lastScanAt` ทุกครั้งจนการตรวจ "Magpie ค้าง" ไม่มีวันทำงาน
+5. **offscreen โหลด lib เท่าที่ใช้** — ลบ 3 script tag ออกจาก `offscreen.html` ใช้ `loadLib()` แทน
+   lame โหลดเมื่ออัดเสียง · jsqr โหลดเฉพาะเครื่องที่ไม่มี BarcodeDetector (`createScanner({ loadFallback })`)
+   · fflate โหลดตอน EXPORT_ZIP · ยืนยันด้วย harness: offscreen บูตแล้วไม่มี lib ตัวไหนถูกโหลดเลย
+
+ทดสอบข้อ 4-5 ไว้ที่ (harness อยู่ใน scratchpad ของ session นั้น ถ้าหายให้เขียนใหม่ได้จากคำอธิบายนี้):
+รัน service-worker ใน node ด้วย chrome stub ยิง heartbeat 720 ครั้งแล้วนับจำนวน `storage.local.set`
+· headless Chrome เปิด popup/offscreen พร้อม stub เพื่อดูว่าอะไรถูกโหลดจริง
 
 ## งานค้าง
 

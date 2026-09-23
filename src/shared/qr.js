@@ -9,7 +9,12 @@ const OVERLAP = 0.15;    // tiles overlap so a QR sitting on a seam isn't cut in
 const UPSCALE = 2;       // blow tiles up before decoding — helps with small/compressed QR
 const MAX_TILE_PX = 1600;
 
-export async function createScanner() {
+/**
+ * @param {{loadFallback?: () => Promise<void>}} opts - called only when Chrome
+ *   has no BarcodeDetector, so the 256 KB jsQR bundle is parsed on the machines
+ *   that actually need it instead of on every capture.
+ */
+export async function createScanner({ loadFallback } = {}) {
   let detector = null;
   try {
     if (typeof BarcodeDetector !== 'undefined') {
@@ -22,6 +27,9 @@ export async function createScanner() {
     detector = null;
   }
 
+  if (!detector && typeof self.jsQR !== 'function' && loadFallback) {
+    await loadFallback();
+  }
   if (!detector && typeof self.jsQR !== 'function') {
     throw new Error('No QR decoder available (BarcodeDetector missing and jsQR not loaded)');
   }

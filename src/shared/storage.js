@@ -91,9 +91,25 @@ export async function getState() {
 }
 
 export async function setState(patch) {
-  const next = { ...(await getState()), ...patch };
+  const current = await getState();
+  // A patch that changes nothing still rewrote the whole state blob and woke
+  // every listener with it. The heartbeat sends the same numbers for minutes at
+  // a time when a meeting is just sitting there.
+  if (!changesAnything(current, patch)) return current;
+  const next = { ...current, ...patch };
   await chrome.storage.local.set({ state: next });
   return next;
+}
+
+function changesAnything(current, patch) {
+  return Object.entries(patch).some(([key, value]) => {
+    const now = current[key];
+    if (now === value) return false;
+    if (now && value && typeof now === 'object' && typeof value === 'object') {
+      return JSON.stringify(now) !== JSON.stringify(value);
+    }
+    return true;
+  });
 }
 
 export async function resetState() {

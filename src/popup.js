@@ -15,6 +15,8 @@ let settings = null;
 let levelTimer = null;
 let lastSession = null; // most recent finished session, for the download block
 let lastSave = null;    // where the auto-saved ZIP went, for that same session
+let snapshot = null;    // last full read, so a live push only has to replace `state`
+let livePort = null;
 
 init();
 
@@ -103,14 +105,16 @@ async function render() {
   paint(await getPopupSnapshot());
 }
 
-function paint(snapshot) {
-  state = snapshot.state;
-  settings = snapshot.settings;
-  lastSession = snapshot.lastSession;
-  lastSave = snapshot.lastSave;
-  const log = snapshot.log;
+function paint(next) {
+  snapshot = next;
+  state = next.state;
+  settings = next.settings;
+  lastSession = next.lastSession;
+  lastSave = next.lastSave;
+  const log = next.log;
 
   const monitoring = state.monitoring;
+  syncLivePort(monitoring);
   const sameTab = monitoring && currentTab && state.tabId === currentTab.id;
 
   el('pill').textContent = monitoring ? (state.recording ? 'กำลังอัด' : 'กำลังเฝ้า') : 'หยุดอยู่';
@@ -411,6 +415,29 @@ async function downloadLast(kind) {
   setProgress(0);
   el('doneStatus').dataset.busy = '';
   renderDone(false);
+}
+
+/**
+ * While a session runs the worker pushes progress straight here, so it doesn't
+ * have to write those numbers to disk every ten seconds just to reach us.
+ * Connected only while monitoring: opening a port wakes the service worker, and
+ * waking it to open a popup is the cost this file exists to avoid.
+ */
+function syncLivePort(monitoring) {
+  if (monitoring && !livePort) {
+    try {
+      livePort = chrome.runtime.connect({ name: 'magpie-live' });
+      livePort.onMessage.addListener((msg) => {
+        if (msg?.type === 'STATE' && snapshot) paint({ ...snapshot, state: msg.state });
+      });
+      livePort.onDisconnect.addListener(() => { livePort = null; });
+    } catch {
+      livePort = null; // the 5 s poll still covers us
+    }
+  } else if (!monitoring && livePort) {
+    livePort.disconnect();
+    livePort = null;
+  }
 }
 
 // ---------------------------------------------------------------- lazy loading
