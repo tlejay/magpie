@@ -3,7 +3,7 @@
 
 import {
   getSettings, saveSettings, getState, setState, resetState,
-  addLogEntry, updateLogEntry, getSeen, markSeen, DEFAULT_SETTINGS,
+  addLogEntry, updateLogEntry, getSeen, markSeen, setLastSessionSummary, DEFAULT_SETTINGS,
 } from './shared/storage.js';
 import { extractUrl, passesFilter, isBlocked } from './shared/qr.js';
 import { putQrHit, markSlideUploaded, dropSlideBlob } from './shared/db.js';
@@ -30,6 +30,9 @@ async function reconcileAfterRestart() {
   const state = await getState();
   if (!state.monitoring) return;
   if (await hasOffscreen()) return;
+  // Whatever that session managed to write is still in IndexedDB, so leave the
+  // popup a way back to it instead of dropping it with the stale state.
+  await cacheSessionSummary(state, null);
   await resetState();
   await setBadge('');
   await releaseKeepAwake();
@@ -132,6 +135,7 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
     slideCount: 0,
     slidesUploaded: 0,
     audioChunks: 0,
+    qrSaved: 0,
     frameW: res.frameW || 0,
     frameH: res.frameH || 0,
     engine: res.engine || '',
@@ -155,6 +159,10 @@ async function startMonitor({ streamId, tabId, tabTitle, tabUrl }) {
 let saving = Promise.resolve();
 
 async function stopMonitor(reason) {
+  // Read before resetState wipes it — this is the only place that still knows
+  // when the session started and which tab it was watching.
+  const before = await getState();
+
   let summary = null;
   const had = await hasOffscreen();
   if (had) {
@@ -163,6 +171,7 @@ async function stopMonitor(reason) {
   }
   await chrome.alarms.clear(WATCHDOG_ALARM);
   await releaseKeepAwake();
+  await cacheSessionSummary(before, summary);
   await resetState();
   await setBadge('');
 
@@ -176,6 +185,28 @@ async function stopMonitor(reason) {
     await closeOffscreen();
   }
   return { reason, summary, saved };
+}
+
+/**
+ * Leave behind what the popup needs to offer the recording back, without it
+ * having to open a 200 MB IndexedDB to find out. Written even when the counts
+ * are zero, so a later popup can tell "nothing was captured" from "never ran".
+ */
+async function cacheSessionSummary(before, summary) {
+  const id = summary?.sessionId || before.sessionId;
+  if (!id) return null;
+  const counts = {
+    chunks: summary?.chunks ?? before.audioChunks ?? 0,
+    slides: summary?.slides ?? before.slideCount ?? 0,
+    qrHits: before.qrSaved ?? 0,
+  };
+  return setLastSessionSummary({
+    id,
+    startedAt: before.startedAt || null,
+    endedAt: Date.now(),
+    tabTitle: before.tabTitle || '',
+    counts,
+  }).catch(() => null);
 }
 
 /**
@@ -492,8 +523,9 @@ async function handleQrFound({ values, pass, scanCount, frameW, frameH, snapshot
 
     // Also record it against the session so it lands on the exported timeline.
     if (state.sessionId) {
-      await putQrHit(state.sessionId, { text: value, url, offsetMs: offsetMs ?? null, pass })
-        .catch(() => {});
+      const stored = await putQrHit(state.sessionId, { text: value, url, offsetMs: offsetMs ?? null, pass })
+        .then(() => true).catch(() => false);
+      if (stored) await setState({ qrSaved: (await getState()).qrSaved + 1 });
     }
 
     await notifyQr(id, value, url);

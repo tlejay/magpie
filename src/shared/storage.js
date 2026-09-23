@@ -67,6 +67,7 @@ export const DEFAULT_STATE = {
   slideCount: 0,
   slidesUploaded: 0,      // how many reached Discord — makes a silent failure visible
   audioChunks: 0,
+  qrSaved: 0,             // QR hits written to the session, for the summary shown after stopping
   audioNotice: '',        // e.g. mic denied — surfaced, never swallowed
   slideUploadFailed: false, // so a failing webhook warns once, not once per slide
   slideBlank: false,      // capture went black (Picture-in-Picture is the usual cause)
@@ -103,6 +104,37 @@ export async function resetState() {
 export async function getLog() {
   const { log } = await chrome.storage.local.get('log');
   return Array.isArray(log) ? log : [];
+}
+
+/**
+ * Everything the popup needs to draw itself, in ONE round trip to the browser
+ * process. Four separate get() calls used to run before anything appeared on
+ * screen — each one an IPC hop, for data that lives in the same store.
+ */
+export async function getPopupSnapshot() {
+  const raw = await chrome.storage.local.get(['state', 'settings', 'log', 'lastSession', 'lastSave']);
+  return {
+    state: { ...DEFAULT_STATE, ...(raw.state || {}) },
+    settings: { ...DEFAULT_SETTINGS, ...(raw.settings || {}) },
+    log: Array.isArray(raw.log) ? raw.log : [],
+    lastSession: raw.lastSession || null,
+    lastSave: raw.lastSave || null,
+  };
+}
+
+// The finished session, summarised. The popup used to read this out of
+// IndexedDB, which meant opening a database holding every recording ever made
+// just to print "audio 00:42:10 · 12 slides". The summary is a few hundred
+// bytes, so it lives here and IndexedDB is only opened when the user actually
+// asks for the files.
+export async function getLastSessionSummary() {
+  const { lastSession } = await chrome.storage.local.get('lastSession');
+  return lastSession || null;
+}
+
+export async function setLastSessionSummary(summary) {
+  await chrome.storage.local.set({ lastSession: summary });
+  return summary;
 }
 
 export async function addLogEntry(entry) {

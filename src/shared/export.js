@@ -5,6 +5,7 @@
 // the archive navigable months later.
 
 import { getSessionBundle } from './db.js';
+import { formatOffset } from './format.js';
 
 /** fflate is loaded as a classic script by whichever page calls this. */
 function fflate() {
@@ -12,14 +13,7 @@ function fflate() {
   return self.fflate;
 }
 
-export function formatOffset(ms) {
-  const total = Math.max(0, Math.round((ms || 0) / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
+export { formatOffset };
 
 function fileStamp(ms) {
   return formatOffset(ms).replace(/:/g, '-');

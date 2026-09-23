@@ -1,6 +1,10 @@
-import { getState, getSettings, saveSettings, getLog } from './shared/storage.js';
-import { listSessions, getCounts } from './shared/db.js';
-import { buildAudioFiles, buildSessionZip, downloadBlob, formatOffset } from './shared/export.js';
+// Nothing heavy is imported here on purpose. The popup is a brand new process
+// on every click, so anything named at the top of this file is disk read, parse
+// and execute before the user sees a thing. IndexedDB (db.js) and the ZIP
+// builder (export.js, plus fflate) load on demand, from the buttons that need
+// them — see exporter().
+import { getPopupSnapshot, setLastSessionSummary, saveSettings } from './shared/storage.js';
+import { formatOffset } from './shared/format.js';
 
 const el = (id) => document.getElementById(id);
 const TOOLS = ['enableQr', 'enableAudio', 'enableSlides'];
@@ -10,6 +14,7 @@ let state = null;
 let settings = null;
 let levelTimer = null;
 let lastSession = null; // most recent finished session, for the download block
+let lastSave = null;    // where the auto-saved ZIP went, for that same session
 
 init();
 
@@ -18,8 +23,26 @@ async function init() {
   el('version').textContent = manifest.version_name || manifest.version;
   el('version').title = 'เวอร์ชันที่โหลดอยู่จริง — ถ้าไม่ตรงกับที่คาด แปลว่ายังไม่ได้ Reload';
 
-  [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  wireEvents();
 
+  // The whole of "the popup opened slowly" is the distance from here to the
+  // first painted state. It is two calls, in parallel, and neither of them
+  // opens a database.
+  const [tabs, snapshot] = await Promise.all([
+    chrome.tabs.query({ active: true, currentWindow: true }),
+    getPopupSnapshot(),
+  ]);
+  [currentTab] = tabs;
+  paint(snapshot);
+
+  // Sessions recorded before the summary was cached have nothing to show. Go
+  // find it in IndexedDB — but only now, with the UI already on screen.
+  if (!snapshot.lastSession) hydrateLastSessionFromDb();
+
+  setInterval(render, 5000); // keeps the elapsed labels honest
+}
+
+function wireEvents() {
   el('toggle').addEventListener('click', onToggle);
 
   for (const id of TOOLS) {
@@ -44,37 +67,48 @@ async function init() {
   el('dlZip').addEventListener('click', () => downloadLast('zip'));
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && (changes.state || changes.log || changes.settings)) render();
-    if (area === 'local' && changes.lastSave) render();
+    if (area !== 'local') return;
+    if (changes.state || changes.log || changes.settings || changes.lastSession || changes.lastSave) render();
   });
-
-  await refreshLastSession();
-  await render();
-  setInterval(render, 5000); // keeps the elapsed labels honest
 }
 
 /**
- * Read the newest session straight from IndexedDB rather than only remembering
- * the one stopped in this popup — closing and reopening it should not lose the
- * way to get a recording out.
+ * A profile that recorded before the summary existed still deserves its
+ * download buttons. This is the one path that opens IndexedDB without the user
+ * asking for a file — it runs after the first paint, and it writes the summary
+ * so it never has to run again.
  */
-async function refreshLastSession() {
+async function hydrateLastSessionFromDb() {
   try {
+    const { listSessions, getCounts } = await import('./shared/db.js');
     const [newest] = await listSessions();
-    if (!newest) { lastSession = null; return; }
+    if (!newest) return;
     const counts = await getCounts(newest.id);
-    lastSession = (counts.chunks || counts.slides) ? { ...newest, counts } : null;
-  } catch {
-    lastSession = null; // a broken read must not take the whole popup down
-  }
+    if (!(counts.chunks || counts.slides || counts.qrHits)) return;
+    await setLastSessionSummary({
+      id: newest.id,
+      startedAt: newest.startedAt,
+      endedAt: newest.endedAt,
+      tabTitle: newest.tabTitle || '',
+      counts,
+    });
+    await render();
+  } catch { /* a broken read must not take the whole popup down */ }
 }
 
 // ---------------------------------------------------------------- render
 
+/** Re-read everything, then draw. One storage round trip, as on open. */
 async function render() {
-  state = await getState();
-  settings = await getSettings();
-  const log = await getLog();
+  paint(await getPopupSnapshot());
+}
+
+function paint(snapshot) {
+  state = snapshot.state;
+  settings = snapshot.settings;
+  lastSession = snapshot.lastSession;
+  lastSave = snapshot.lastSave;
+  const log = snapshot.log;
 
   const monitoring = state.monitoring;
   const sameTab = monitoring && currentTab && state.tabId === currentTab.id;
@@ -205,12 +239,12 @@ function setMeter(node, value) {
 }
 
 function renderDone(monitoring) {
-  const show = !monitoring && !!lastSession;
+  const c = lastSession?.counts || {};
+  const show = !monitoring && !!(c.chunks || c.slides || c.qrHits);
   el('lastSession').hidden = !show;
   if (!show) return;
 
-  const c = lastSession.counts;
-  const dur = (lastSession.endedAt || Date.now()) - lastSession.startedAt;
+  const dur = lastSession.startedAt ? (lastSession.endedAt || Date.now()) - lastSession.startedAt : 0;
   const parts = [];
   if (c.chunks) parts.push(`🔊 เสียง ${formatOffset(dur)}`);
   if (c.slides) parts.push(`🖼 สไลด์ ${c.slides} ภาพ`);
@@ -224,11 +258,10 @@ function renderDone(monitoring) {
 }
 
 /** Where the auto-saved ZIP went — or why it didn't — for the session shown. */
-async function renderSaved() {
+function renderSaved() {
   const node = el('doneStatus');
   // Don't talk over a manual download that is reporting its own progress.
   if (node.dataset.busy === '1') return;
-  const { lastSave } = await chrome.storage.local.get('lastSave');
   if (!lastSave || lastSave.sessionId !== lastSession?.id) {
     if (node.dataset.auto === '1') { node.textContent = ''; node.dataset.auto = ''; }
     return;
@@ -321,9 +354,8 @@ async function onToggle() {
       if (settings.autoSaveZip) el('msg').textContent = 'กำลังบันทึก ZIP…';
       await send({ type: 'STOP_MONITOR' });
       el('msg').textContent = '';
-      // This block is the answer to "where did the audio go" — fill it in the
-      // instant the user stops, not on the next popup open.
-      await refreshLastSession();
+      // The worker writes the session summary before it answers, so the final
+      // render() below already has "where did the audio go" in hand.
     } else {
       if (!currentTab) throw new Error('หาแท็บปัจจุบันไม่เจอ');
       if (/^(chrome|edge|about|chrome-extension):/.test(currentTab.url || '')) {
@@ -355,6 +387,7 @@ async function downloadLast(kind) {
   setStatus('กำลังเตรียมไฟล์…', null);
 
   try {
+    const { buildAudioFiles, buildSessionZip, downloadBlob } = await exporter();
     if (kind === 'audio') {
       const files = await buildAudioFiles(lastSession.id);
       if (!files.length) throw new Error('ไม่มีไฟล์เสียงใน session นี้');
@@ -378,6 +411,32 @@ async function downloadLast(kind) {
   setProgress(0);
   el('doneStatus').dataset.busy = '';
   renderDone(false);
+}
+
+// ---------------------------------------------------------------- lazy loading
+
+let exporting = null;
+
+/**
+ * The ZIP path — export.js, db.js and fflate — is roughly everything the popup
+ * could load, and it is worth nothing until someone asks for a file. Pulling it
+ * in here instead of at the top keeps it out of every popup open.
+ */
+function exporter() {
+  exporting ||= loadFflate().then(() => import('./shared/export.js'));
+  return exporting;
+}
+
+/** fflate is a classic script: export.js reads it off the global. */
+function loadFflate() {
+  if (self.fflate) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tag = document.createElement('script');
+    tag.src = '../lib/fflate.min.js';
+    tag.onload = resolve;
+    tag.onerror = () => reject(new Error('โหลดตัวบีบอัดไม่สำเร็จ'));
+    document.head.append(tag);
+  });
 }
 
 // ---------------------------------------------------------------- helpers
