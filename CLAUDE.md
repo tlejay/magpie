@@ -148,6 +148,14 @@ EOF
 `version` ต้องเป็นตัวเลขคั่นจุดเท่านั้น (กฎของ Chrome) ส่วน `version_name` ใส่ข้อความอะไรก็ได้
 เพิ่ม `version` เองเมื่อมีฟีเจอร์ใหม่จริง ๆ ส่วน build stamp อัปทุก push
 
+## ภาพใน README (ถ่ายใหม่ 26 ก.ย. 2569 ด้วย `/kiki-gh-readme`)
+
+`docs/hero.png` · `demo.gif` · `popup-states.png` · `options.png` · `sessions.png` · `social-preview.png`
+ถ่ายจาก **UI จริง** ของ popup / options / sessions ที่เปิดใน tab ธรรมดา โดยแทน `chrome.*` ด้วย stub ป้อนข้อมูลตัวอย่าง
+(หน้าประชุม "Weekly Team Sync" + QR `forms.example.com` เป็นฉากจำลอง ไม่ใช่ข้อมูลจริง) — sessions seed ลง IndexedDB ผ่าน `db.js` ตัวจริง
+**UI เปลี่ยนเมื่อไหร่ต้องถ่ายใหม่ทั้งชุด** ไม่งั้นภาพในหน้าเดียวกันขัดกันเอง · ป้าย build ในภาพคือ `1.4.0 · build 0923-2328`
+Social preview ตั้งผ่าน API ไม่ได้ ต้องอัป `docs/social-preview.png` เองที่ Settings → General
+
 ## Git
 
 - public repo `github.com/tlejay/magpie` · commit + push ได้เลยหลังทำงานเสร็จแต่ละก้อน

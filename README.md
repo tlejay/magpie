@@ -1,25 +1,71 @@
+<div align="center">
+
+<img src="docs/hero.png" alt="Magpie — the popup running over a meeting tab, with a QR code on the shared slide">
+
 # Magpie
 
 **Collects what your meeting leaves behind.**
+
 A Chrome extension that watches any meeting tab and keeps the parts worth keeping — the QR code that flashed past, the audio, and every slide that went up — without sending a single frame anywhere.
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-f59e0b)
+![Chrome 116+](https://img.shields.io/badge/Chrome-116%2B-4285F4?logo=googlechrome&logoColor=white)
+![Vanilla JS](https://img.shields.io/badge/JavaScript-vanilla-f7df1e?logo=javascript&logoColor=black)
 ![No AI](https://img.shields.io/badge/AI-none-1db954)
 ![Build step](https://img.shields.io/badge/build%20step-none-1db954)
 ![Local](https://img.shields.io/badge/processing-100%25%20local-1db954)
 
-<p align="center">
-  <img src="docs/popup.png" width="720" alt="The popup stopped, and the popup while running">
-  <br><em>Stopped: arm the tools and start. Running: live counters, audio meters, and nothing you can accidentally change mid-session.</em>
-</p>
+**[Install in 30 seconds](#install)** · [See it in action](#-see-it-in-action) · [How it works](#how-it-works) · [Privacy](#privacy)
 
-| | |
-|---|---|
-| 👁 **Watch** | Finds QR codes on screen, alerts you, and pushes the link to Discord |
-| 🔊 **Listen** | A virtual speaker: audio still plays normally while a copy is recorded locally, with your microphone mixed in or kept as a separate file |
-| 🖼 **Collect** | Saves a screenshot every time the slide actually changes, decided by comparing images on your machine — and pushes each one to Discord as it happens (can be turned off) |
+</div>
+
+## ✨ What you get
+
+| | Feature | What it does |
+|---|---|---|
+| 👁 | **QR watch** | Finds QR codes on the shared screen, alerts you with a sound and a notification, and pushes the link to Discord |
+| 🚫 | **Deny-list** | LINE add-friend codes (`line.naver.jp`, `lin.ee`) are filtered by default — add your own, or an allow-list |
+| 🔊 | **Virtual speaker** | Records the tab's audio while it keeps playing through your speakers, with your microphone mixed in or as a separate file |
+| 🎧 | **MP3, encoded live** | 16 kHz mono MP3 at 32 kbps — about 14 MB an hour, small enough for transcription tools |
+| 🖼 | **Slide capture** | Saves a screenshot each time the slide really changes, and ignores a moving webcam tile |
+| 📨 | **Slides to Discord** | Each captured slide is posted to your webhook as it happens, so the deck follows you to your phone (can be turned off) |
+| 📦 | **ZIP on stop** | Audio, slides, QR frames and a `timeline.md` land in `Downloads/Magpie/` the moment you press stop |
+| 🗂 | **Session history** | Every meeting stays in IndexedDB on your machine — export again or delete from one page |
+| 🔒 | **Nothing leaves** | No AI, no server, no account. The only outbound request is the Discord webhook you set |
 
 Works with any meeting that runs in a Chrome tab: Zoom web client, Google Meet, Microsoft Teams, Webex, or a livestream. Nothing in it is tied to a particular platform — it reads pixels and audio from the tab you point it at.
+
+## 🎬 See it in action
+
+<p align="center">
+  <img src="docs/demo.gif" width="880" alt="Starting Magpie on a meeting tab: slides change, the counters rise, a QR code is caught, then stop saves a ZIP">
+  <br><em>Start on a meeting tab → slides are counted as they change → the QR on slide 3 is caught → stop, and the ZIP is saved.<br>Staged with a mock meeting and time compressed; the popup is the real UI (in Thai, its current language).</em>
+</p>
+
+## 🧭 Three states, one popup
+
+<p align="center">
+  <img src="docs/popup-states.png" width="880" alt="The popup before starting, while recording, and after stopping">
+</p>
+
+Tools lock while a session runs — they decide what the capture asks Chrome for, so changing them mid-meeting would silently do nothing. Stop, change, start again.
+
+More screens: [saved sessions](docs/sessions.png) · [settings](docs/options.png)
+
+## 🤔 Magpie or a meeting notetaker?
+
+| | **Magpie** | AI notetaker (a bot joins the call) | The meeting app's own recording |
+|---|---|---|---|
+| Where the data goes | Your disk | The vendor's cloud | The platform's cloud or the host's drive |
+| Needs the host's say-so | No | Often | Usually host-only or a paid plan |
+| Transcript and summary | ❌ — you get an MP3 to feed any tool you like | ✅ | Varies |
+| A still of every slide | ✅ | Varies | ❌ — a video you scrub through |
+| Alerts when a QR code appears | ✅ | ❌ | ❌ |
+| Desktop Zoom / Teams apps | ❌ — Chrome tabs only | ✅ | ✅ |
+| Cost | Free, MIT | Free tier, then subscription | Included in some plans |
+
+If you want a written summary without lifting a finger, a notetaker is the better tool. Magpie is for when the recording should never leave your machine, or when the thing you'll regret missing is a QR code or a slide rather than a sentence.
 
 ---
 
@@ -242,12 +288,13 @@ Tools can't be switched mid-session: they decide what the capture asks Chrome fo
 ## Settings
 
 <p align="center">
-  <img src="docs/options.png" width="620" alt="Options page">
+  <img src="docs/options.png" width="620" alt="Options page: Discord webhook and QR settings">
+  <br><em>The top of the options page. Every section is a tab along the top.</em>
 </p>
 
 Everything is adjustable: scan intervals, re-alert cooldown, deny- and allow-lists, alert sound and volume, audio bitrate and chunk size, one-file-or-two, passthrough and output device, microphone selection, whether slides go to Discord as they are captured, and every threshold in the slide detector.
 
-The popup and the options page both print the loaded build (`1.2.0 · build 0904-1813`). Loading unpacked means iterating on code Chrome has already cached, and "did the reload take?" is otherwise a guess that costs a whole test round.
+The popup and the options page both print the loaded build (`1.4.0 · build 0923-2328`). Loading unpacked means iterating on code Chrome has already cached, and "did the reload take?" is otherwise a guess that costs a whole test round.
 
 ---
 
@@ -319,8 +366,18 @@ test/                      QR and slide harnesses
 
 ---
 
+## Contributing
+
+Issues and pull requests are welcome. There is no build step: clone, **Load unpacked**, edit, **Reload**. Please read the rules at the top of [`CLAUDE.md`](CLAUDE.md) first — most of them exist because breaking them silently loses a whole meeting (a muted tab, a dead recorder, your own voice in your ears).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
 Built by [Tle](https://madebytle.com) with [Claude Code](https://claude.com/claude-code).
+
+<div align="center">
+
+**If Magpie ever catches the QR code you were about to miss, a ⭐ helps other people find it.**
+
+</div>
